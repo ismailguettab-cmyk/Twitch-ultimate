@@ -1,0 +1,36 @@
+// Tout ce qui est mémorisé sur le Fire Stick : réglages, session, favoris, progression des rediffs.
+const P = "tu.";
+export const store = {
+  get(k, d) { try { const v = localStorage.getItem(P + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(P + k, JSON.stringify(v)); } catch { /* stockage plein */ } },
+  del(k) { try { localStorage.removeItem(P + k); } catch { /* rien */ } },
+};
+
+export const DEFAULTS = { adblock: 0, quality: 0, lowLat: 1, chatPos: 0, chatStyle: 0, chatSize: 0, alerts: 0, resume: 0, sleep: 0, stats: 0, lang: 0 };
+export const settings = Object.assign({}, DEFAULTS, store.get("settings", {}));
+export const saveSettings = () => store.set("settings", settings);
+
+export const favs = new Set(store.get("favs", []));
+export function toggleFav(login) { favs.has(login) ? favs.delete(login) : favs.add(login); store.set("favs", [...favs]); return favs.has(login); }
+
+export const reminders = new Set(store.get("reminders", []));
+export function toggleReminder(id) { reminders.has(id) ? reminders.delete(id) : reminders.add(id); store.set("reminders", [...reminders]); return reminders.has(id); }
+
+/** Progression des rediffusions : { id: { pos, sec, title, login, name, avatar, thumb, start, at } } */
+export function progressOf(id) { return store.get("progress", {})[id]?.pos || 0; }
+export function saveProgress(vod, pos) {
+  const p = store.get("progress", {});
+  if (!vod || !vod.sec) return;
+  if (pos < 30 || pos > vod.sec - 90) delete p[vod.id];
+  else p[vod.id] = { pos: Math.floor(pos), sec: vod.sec, title: vod.title, login: vod.ch.login, name: vod.ch.name, avatar: vod.ch.avatar || "", id2: vod.ch.id, thumb: vod.thumb || "", start: vod.start, at: Date.now() };
+  const keys = Object.keys(p).sort((a, b) => p[a].at - p[b].at);
+  while (keys.length > 40) delete p[keys.shift()];
+  store.set("progress", p);
+}
+export function continueList() {
+  const p = store.get("progress", {});
+  return Object.entries(p).sort((a, b) => b[1].at - a[1].at).slice(0, 15).map(([id, v]) => ({
+    id, title: v.title, sec: v.sec, start: v.start, end: v.start + v.sec * 1000, thumb: v.thumb,
+    ch: { id: v.id2, login: v.login, name: v.name, avatar: v.avatar, live: false }, watched: v.pos / v.sec,
+  }));
+}
