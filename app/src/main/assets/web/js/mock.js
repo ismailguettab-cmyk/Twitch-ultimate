@@ -19,7 +19,7 @@ const RAW = [
   { name: "Ravenz", cat: "Survie", live: false },
 ];
 const CATS = ["Discussion", "FPS compétitif", "MOBA", "IRL", "Speedrun", "Survie", "Musique", "Stratégie", "Échecs", "Créatif", "Rétro", "Course auto"]
-  .map((name, i) => ({ id: name, name, art: "", rank: i + 1, glyph: ["💬", "🎯", "🛡️", "📍", "⏱️", "🏕️", "🎹", "♟️", "♞", "🎨", "👾", "🏎️"][i] }));
+  .map((name, i) => ({ id: name, name, art: "", rank: i + 1, viewers: [182000, 141000, 120000, 52000, 34000, 31000, 28000, 23000, 21000, 19000, 12000, 9000][i], glyph: ["💬", "🎯", "🛡️", "📍", "⏱️", "🏕️", "🎹", "♟️", "♞", "🎨", "👾", "🏎️"][i] }));
 
 const mkCh = r => ({ id: r.name.toLowerCase(), login: r.name.toLowerCase(), name: r.name, avatar: "", live: !!r.live,
   stream: r.live ? { title: r.title, cat: r.cat, catId: r.cat, viewers: r.viewers, startedAt: NOW0 - r.since * H, thumb: "", thumbBig: "" } : null, _raw: r });

@@ -9,6 +9,7 @@ import { Chat } from "./chat.js";
 import { drawScene, fakeChatLine } from "./mock.js";
 import { PLAY, PAUSE, CHATI } from "./ui.js";
 import { ava } from "./util.js";
+import { stopPreview } from "./preview.js";
 
 let A;
 export function bindPlayer(app) { A = app; }
@@ -35,6 +36,7 @@ export function initPlayer() {
 
 /* ---------- ouverture / fermeture ---------- */
 export async function openPlayer(o) {
+  stopPreview();
   P.ret = N.focused; P.open = true; P.ch = o.ch; P.mode = o.mode; P.vod = o.vod || null; P.clip = o.clip || null;
   P.paused = false; P.t = 0; P.dur = 0; P.ads = 0; P.vt = 0;
   if (o.chat) P.chat = true;
@@ -50,6 +52,7 @@ export function closePlayer() {
   stopMain(); stopPip(); chat.close();
   clearTimeout(P.uiT); clearTimeout(P.adT);
   el("adpill").classList.remove("show");
+  el("qmenu").classList.add("gone");
   player.classList.remove("open", "ui");
   A.onPlayerClosed(P.ret, P.mode);
 }
@@ -280,7 +283,7 @@ function buildUI() {
   mk("pc-cst", "", () => { settings.chatStyle ^= 1; saveSettings(); applyChat(); refreshBtns(); });
   mk("pc-cpos", "", () => { settings.chatPos ^= 1; saveSettings(); applyChat(); refreshBtns(); });
   if (P.mode === "live") { mk("pc-pip", "", togglePip); if (P.pip) mk("pc-swap", "Inverser les lives", swapPip); }
-  mk("pc-q", "", () => { if (P.quals.length < 2) return; P.qi = (P.qi + 1) % P.quals.length; applyQuality(); refreshBtns(); });
+  mk("pc-q", "", openQualityMenu);
   mk("pc-fav", "", () => { const on = toggleFav(c.login); refreshBtns(); buildTop(); A.toast(`<div><b>${on ? "Ajouté aux favoris" : "Retiré des favoris"}</b><small>${esc(c.name)} ${on ? "passera en premier partout dans l’app." : "n’est plus en favori."}</small></div>`, 2500); });
   mk("pc-stats", "Statistiques", toggleStats);
   b.appendChild(row);
@@ -294,19 +297,45 @@ function refreshBtns() {
   set("pc-cst", "Chat " + (settings.chatStyle ? "sombre" : "transparent"));
   set("pc-cpos", "Chat " + (settings.chatPos ? "à gauche" : "à droite"));
   set("pc-pip", P.pip ? "Retirer le 2e live" : "Ajouter un 2e live");
-  set("pc-q", P.quals[P.qi]?.label || "Qualité");
+  set("pc-q", (P.quals[P.qi]?.label || "Qualité") + " ▾");
   set("pc-fav", favs.has(P.ch?.login) ? "★ Favori" : "☆ Favori");
   el("pc-chat")?.classList.toggle("on", P.chat);
   el("pc-stats")?.classList.toggle("on", P.stats);
   el("pc-fav")?.classList.toggle("on", favs.has(P.ch?.login));
 }
+/* ---------- liste des qualités ---------- */
+export const qualityMenuOpen = () => !el("qmenu").classList.contains("gone");
+function openQualityMenu() {
+  if (P.quals.length < 2) { A.toast("<div><b>Une seule qualité disponible</b><small>Cette vidéo n’est proposée qu’en une qualité.</small></div>", 2500); return; }
+  const m = el("qmenu");
+  m.innerHTML = "<div class=\"qh\">Qualité</div>";
+  P.quals.forEach((q, i) => {
+    const it = h("div", "qitem focusable" + (i === P.qi ? " cur" : ""), `<span>${esc(q.label)}</span>${i === P.qi ? "<b>✓</b>" : ""}`);
+    it._enter = () => { P.qi = i; applyQuality(); closeQualityMenu(); refreshBtns(); };
+    m.appendChild(it);
+  });
+  m.classList.remove("gone");
+  const b = el("pc-q"), pr = player.getBoundingClientRect(), br = b.getBoundingClientRect();
+  m.style.left = (br.left - pr.left) / N.scale + "px";
+  m.style.bottom = (pr.bottom - br.top) / N.scale + 16 + "px";
+  setFocus($(".qitem.cur", m) || $(".qitem", m), { scroll: false });
+  clearTimeout(P.uiT);
+}
+function closeQualityMenu(refocus = true) {
+  const m = el("qmenu");
+  if (m.classList.contains("gone")) return;
+  m.classList.add("gone");
+  if (refocus) setFocus(el("pc-q"), { scroll: false });
+  bump();
+}
+
 function showUI(on, focusEl) {
-  if (!on) { player.classList.remove("ui"); clearTimeout(P.uiT); return; }
+  if (!on) { closeQualityMenu(false); player.classList.remove("ui"); clearTimeout(P.uiT); return; }
   player.classList.add("ui");
   setFocus(focusEl || (N.focused && player.contains(N.focused) && N.focused.isConnected ? N.focused : el("pc-play")), { scroll: false });
   bump();
 }
-function bump() { clearTimeout(P.uiT); P.uiT = setTimeout(() => { if (!P.paused) showUI(false); }, 6000); }
+function bump() { clearTimeout(P.uiT); P.uiT = setTimeout(() => { if (!P.paused && !qualityMenuOpen()) showUI(false); }, 6000); }
 function togglePause() {
   P.paused = !P.paused;
   if (!P.demo) { if (P.paused) video.pause(); else video.play().catch(() => {}); }
@@ -412,6 +441,12 @@ export function playerKey(a) {
   if (a === "suspend") { if (!P.paused) togglePause(); return; }
   if (a === "playpause") return togglePause();
   if ((a === "rew" || a === "ff") && P.mode !== "live") { seek(a === "rew" ? -30 : 30); return showUI(true, el("seek")); }
+  if (qualityMenuOpen()) {
+    if (a === "back") return closeQualityMenu();
+    if (a === "ok") return activate(N.focused);
+    if (a === "up" || a === "down") move(a);
+    return;
+  }
   const ui = player.classList.contains("ui");
   if (!ui) {
     if (a === "back") return closePlayer();

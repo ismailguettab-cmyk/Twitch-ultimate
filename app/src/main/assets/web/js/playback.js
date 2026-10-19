@@ -10,7 +10,7 @@ const deviceId = store.get("deviceId") || (() => { const d = Array.from({ length
 const TOKEN_Q = `query PlaybackAccessToken_Template($login: String!, $isLive: Boolean!, $vodID: ID!, $isVod: Boolean!, $playerType: String!) { streamPlaybackAccessToken(channelName: $login, params: {platform: "web", playerBackend: "mediaplayer", playerType: $playerType}) @include(if: $isLive) { value signature } videoPlaybackAccessToken(id: $vodID, params: {platform: "web", playerBackend: "mediaplayer", playerType: $playerType}) @include(if: $isVod) { value signature } }`;
 const CLIP_Q = `query VideoAccessToken_Clip($slug: ID!) { clip(slug: $slug) { playbackAccessToken(params: {platform: "web", playerBackend: "mediaplayer", playerType: "site"}) { signature value } videoQualities { frameRate quality sourceURL } } }`;
 
-async function gql(body) {
+export async function gql(body) {
   const r = await json("POST", GQL, { headers: { "Client-ID": WEB_CID, "Device-ID": deviceId, "Content-Type": "text/plain;charset=UTF-8" }, body: JSON.stringify(body) });
   if (r.status !== 200 || !r.data) throw new Error("Twitch refuse la lecture (" + r.status + ")");
   return r.data;

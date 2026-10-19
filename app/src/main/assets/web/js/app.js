@@ -8,6 +8,7 @@ import * as twitch from "./twitch.js";
 import { createMock, drawScene } from "./mock.js";
 import { N, setFocus, move, activate, restoreFocus, ensureVisible } from "./nav.js";
 import * as UI from "./ui.js";
+import { stopPreview } from "./preview.js";
 import { bindPlayer, initPlayer, openPlayer, isOpen, playerKey, playerClick, seekClick, onSettingChanged } from "./player.js";
 
 const P = DEMO ? createMock() : twitch;
@@ -43,13 +44,13 @@ function fit() {
   N.scale = Math.min(w / 1920, hh / 1080);
   st.style.transform = `translate(${(w - 1920 * N.scale) / 2}px,${(hh - 1080 * N.scale) / 2}px) scale(${N.scale})`;
 }
-
 addEventListener("resize", fit); addEventListener("load", fit); setTimeout(fit, 500); setTimeout(fit, 2000);
 
 /* ---------- écrans ---------- */
 function cands() {
   if (!$("#modal").classList.contains("gone")) return $$("#modal .focusable");
   if (!$("#login").classList.contains("gone")) return $$("#login .focusable");
+  if (isOpen() && !$("#qmenu").classList.contains("gone")) return $$("#qmenu .focusable");
   if (isOpen()) return $("#player").classList.contains("ui") ? $$("#p-bottom .focusable") : [];
   return [...$$("#side .focusable"), ...$$(".view.active .focusable")].filter(e => e.offsetParent !== null);
 }
@@ -58,6 +59,7 @@ N.cands = cands;
 function focusFirstIn(sel) { const v = $(sel); if (v) restoreFocus(v, null, 0); }
 function show(name, { fromSide = false, back = false } = {}) {
   const old = S.view;
+  stopPreview();
   if (N.focused && !$("#side").contains(N.focused) && $(VIEWS[old]).contains(N.focused)) S.mem[old] = N.focused.dataset.key;
   if (fromSide) S.stack = name === "home" ? [] : ["home"];
   else if (!back && name !== old) S.stack.push(old);
@@ -83,6 +85,7 @@ function rerender() {
   const v = $(VIEWS[S.view]);
   const key = N.focused && v.contains(N.focused) ? N.focused.dataset.key : null;
   const inSide = $("#side").contains(N.focused);
+  stopPreview();
   RENDER[S.view]();
   if (S.view === "home") S.homeDirty = false;
   UI.renderSide(S.view);

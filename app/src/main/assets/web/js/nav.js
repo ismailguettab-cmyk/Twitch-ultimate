@@ -4,7 +4,7 @@ const side = () => document.getElementById("side");
 
 export function setFocus(el, { scroll = true, smooth = true } = {}) {
   if (!el) return;
-  if (N.focused && N.focused !== el) N.focused.classList.remove("focused");
+  if (N.focused && N.focused !== el) { N.focused.classList.remove("focused"); if (N.focused._blur) N.focused._blur(); }
   N.focused = el;
   el.classList.add("focused");
   side().classList.toggle("open", side().contains(el));

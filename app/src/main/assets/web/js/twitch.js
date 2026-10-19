@@ -4,6 +4,7 @@ import { store } from "./store.js";
 import { CONFIG } from "./config.js";
 import { log } from "./log.js";
 import { sleep } from "./util.js";
+import { gql } from "./playback.js";
 
 const HELIX = "https://api.twitch.tv/helix";
 const SCOPES = "user:read:follows";
@@ -178,7 +179,23 @@ export async function getSchedule(channels) {
 export async function getTopCategories() {
   return cached("cats", 10 * 60000, async () => {
     const d = await helix("/games/top", { first: 40 });
-    return d.data.map((g, i) => ({ id: g.id, name: g.name, art: img(g.box_art_url, 285, 380), rank: i + 1 }));
+    const cats = d.data.map((g, i) => ({ id: g.id, name: g.name, art: img(g.box_art_url, 285, 380), rank: i + 1, viewers: null }));
+    await catViewers(cats);
+    return cats;
+  });
+}
+/** Nombre total de spectateurs par catégorie : chiffre exact de Twitch, sinon somme des 100 plus gros streams. */
+async function catViewers(cats) {
+  try {
+    const q = "query { " + cats.map((c, i) => `g${i}: game(id: "${String(c.id).replace(/\D/g, "")}") { viewersCount }`).join(" ") + " }";
+    const d = await gql({ query: q });
+    cats.forEach((c, i) => { const v = d.data && d.data["g" + i] && d.data["g" + i].viewersCount; if (typeof v === "number") c.viewers = v; });
+  } catch (e) { log("WARN", "spectateurs des catégories", e.message); }
+  const miss = cats.filter(c => c.viewers == null).slice(0, 24);
+  await pool(miss, 6, async c => {
+    const d = await helix("/streams", { game_id: c.id, first: 100 });
+    c.viewers = d.data.reduce((s, x) => s + x.viewer_count, 0);
+    c.approx = true;
   });
 }
 export async function getCategoryStreams(cat, lang) {

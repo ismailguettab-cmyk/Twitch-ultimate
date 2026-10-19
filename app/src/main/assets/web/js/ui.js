@@ -3,6 +3,7 @@ import { $, $$, h, esc, hm, durTxt, agoTxt, clk, kf, thumbStyle, ava, gradBg, hu
 import { settings, saveSettings, favs, reminders, toggleReminder, continueList, progressOf } from "./store.js";
 import { CONFIG, DEMO } from "./config.js";
 import { log } from "./log.js";
+import { previewFocus, previewBlur } from "./preview.js";
 
 let A; // l’objet app (voir app.js)
 export function bindUI(app) { A = app; }
@@ -48,6 +49,8 @@ export function liveCard(c) {
     <div class="card-info">${ava(c, 56, false)}<div class="ci"><div class="c-name">${esc(c.name)}${star(c)}</div><div class="c-title">${esc(s.title)}</div><div class="c-sub">${esc(s.cat || "")}</div></div></div>`);
   e.dataset.key = "live:" + c.login;
   e._enter = () => A.openPlayer({ ch: c, mode: "live" });
+  e._focus = () => previewFocus(e.querySelector(".thumb"), c);
+  e._blur = previewBlur;
   return e;
 }
 export function vodCard(v) {
@@ -65,11 +68,12 @@ export function clipCard(x) {
   e._enter = () => A.openPlayer({ ch: x.ch, mode: "clip", clip: x });
   return e;
 }
-export function catCard(c) {
+export function catCard(c, big = false) {
   const art = c.art
     ? `<div class="art" style="background-image:url(\x27${esc(c.art)}\x27),${gradBg(hueOf(c.name), 3)}"></div>`
     : `<div class="art" style="background:${gradBg(hueOf(c.name), c.name.length)}"><b>${esc(c.name)}</b><em>${c.glyph || ""}</em></div>`;
-  const e = h("div", "cat focusable", `${art}<div class="cm"><span class="cn">${esc(c.name)}</span>${c.rank ? `<span class="rk">n° ${c.rank}</span>` : ""}</div>`);
+  const viewers = c.viewers != null ? `<div class="cv"><span class="dot sm"></span>${c.approx ? "≈ " : ""}${kf(c.viewers)} spectateurs</div>` : "";
+  const e = h("div", "cat focusable" + (big ? " big" : ""), `${art}<div class="cm"><span class="cn">${esc(c.name)}</span>${c.rank ? `<span class="rk">n° ${c.rank}</span>` : ""}</div>${viewers}`);
   e.dataset.key = "cat:" + c.id;
   e._enter = () => A.openCategory(c);
   return e;
@@ -138,8 +142,9 @@ export function renderHome() {
     const b = $(".btns", hero);
     b.appendChild(btn("Regarder le live", "primary", () => A.openPlayer({ ch: f, mode: "live" }), "hero:watch", PLAY));
     b.appendChild(btn("Avec le chat", "", () => A.openPlayer({ ch: f, mode: "live", chat: true }), "hero:chat", CHATI));
+    for (const x of $$(".btn", b)) { x._focus = () => previewFocus(hero, f, 1500, false); x._blur = previewBlur; }
     const last = D.vods.find(v => v.ch.login === f.login);
-    if (last) b.appendChild(btn("Dernière rediff", "", () => A.openPlayer({ ch: f, mode: "vod", vod: last }), "hero:vod"));
+    if (last) { const x = btn("Dernière rediff", "", () => A.openPlayer({ ch: f, mode: "vod", vod: last }), "hero:vod"); x._focus = () => previewFocus(hero, f, 1500, false); x._blur = previewBlur; b.appendChild(x); }
   } else {
     const v = D.vods[0];
     hero.innerHTML = `<canvas id="hero-cv" width="960" height="540"></canvas><div class="hero-shade"></div><div class="hero-c"><h1 class="small">Aucune de vos chaînes n’est en direct</h1><p class="hero-title">${v ? `La dernière rediff de ${esc(v.ch.name)} est prête.` : "Explorez les catégories populaires en attendant."}</p><div class="btns"></div></div>`;
@@ -156,7 +161,7 @@ export function renderHome() {
   else if (D.loadingExtra) sc.appendChild(h("p", "loading-row", "<span class=\"spin\"></span>Recherche des lives d’aujourd’hui…"));
   if (D.sched.length) sc.appendChild(row("Prochains lives prévus", D.sched.map(schedCard), `<span class="hint">OK pour être prévenu au début</span>`));
   if (D.clips.length) sc.appendChild(row("Meilleurs clips du jour", D.clips.map(clipCard), `<span class="hint">vos chaînes, dernières 24 heures</span>`));
-  if (D.cats.length) sc.appendChild(row("Catégories populaires", D.cats.slice(0, 20).map(catCard), `<span class="hint">classées par nombre de spectateurs</span>`));
+  if (D.cats.length) { const r = row("Catégories populaires", D.cats.slice(0, 20).map(c => catCard(c)), `<span class="hint">classées par nombre de spectateurs</span>`); r.classList.add("cats-row"); sc.appendChild(r); }
   const fol = [...D.followed].sort((a, b) => (b.live - a.live) || (favs.has(b.login) - favs.has(a.login)) || (D.vods.some(v => v.ch.login === b.login) - D.vods.some(v => v.ch.login === a.login))).slice(0, 40);
   if (fol.length) sc.appendChild(row("Vos chaînes suivies", fol.map(avCard), `<span class="hint">${D.followed.length} au total</span>`));
   if (D.catRow && D.catRow.list.length) sc.appendChild(row(`Populaire en ${esc(D.catRow.cat.name)}`, D.catRow.list.slice(0, 12).map(liveCard)));
@@ -245,7 +250,7 @@ export function renderCats() {
 export async function renderCat(cat) {
   const pg = $("#cat-page");
   const lang = settings.lang === 1 ? "fr" : "";
-  pg.innerHTML = `<h1 class="page-h">${esc(cat.name)}</h1><p class="page-sub">${lang ? "Streams en français, classés" : "Classés"} par nombre de spectateurs.</p><div class="grid g4" id="g-cat"><p class="loading-row"><span class="spin"></span>Chargement…</p></div>`;
+  pg.innerHTML = `<h1 class="page-h">${esc(cat.name)}</h1><p class="page-sub">${cat.viewers != null ? `${cat.approx ? "≈ " : ""}${kf(cat.viewers)} spectateurs en ce moment. ` : ""}${lang ? "Streams en français, classés" : "Classés"} par nombre de spectateurs.</p><div class="grid g4" id="g-cat"><p class="loading-row"><span class="spin"></span>Chargement…</p></div>`;
   try {
     const list = await A.P.getCategoryStreams(cat, lang);
     if (!pg.isConnected || A.S.cat !== cat) return;
