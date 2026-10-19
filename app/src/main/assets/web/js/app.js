@@ -43,7 +43,8 @@ function fit() {
   N.scale = Math.min(w / 1920, hh / 1080);
   st.style.transform = `translate(${(w - 1920 * N.scale) / 2}px,${(hh - 1080 * N.scale) / 2}px) scale(${N.scale})`;
 }
-addEventListener("resize", fit);
+
+addEventListener("resize", fit); addEventListener("load", fit); setTimeout(fit, 500); setTimeout(fit, 2000);
 
 /* ---------- écrans ---------- */
 function cands() {
