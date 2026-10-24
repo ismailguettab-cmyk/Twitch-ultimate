@@ -42,6 +42,12 @@ export function createMock() {
   return {
     demo: true,
     isLogged: () => store.get("demoLogged", false),
+    listProfiles: () => store.get("demoLogged", false) ? [
+      { id: "demo1", login: "toi", name: "TOI", avatar: "" },
+      { id: "demo2", login: "compte2", name: "Compte 2", avatar: "" },
+    ] : [],
+    setActiveProfile: () => { store.set("demoLogged", true); },
+    removeProfile: () => {},
     getMe: () => ({ display_name: "TOI", login: "toi", profile_image_url: "" }),
     logout() { store.del("demoLogged"); },
     async startDeviceAuth() { await sleep(300); return { userCode: "K7PXM4QD", uri: "https://www.twitch.tv/activate?device-code=K7PXM4QD" }; },
@@ -75,6 +81,19 @@ export function createMock() {
     },
     async getTopCategories() { await sleep(200); return CATS; },
     async getCategoryStreams(cat) { await sleep(500); return catStreams(cat); },
+    async getTopFrenchStreams(n = 10) {
+      await sleep(300);
+      return catStreams({ name: "Discussion" }, n).map(c => ({ ...c, _fr: true }));
+    },
+    async getChannelProfile(ch) {
+      await sleep(200);
+      return { id: ch.id, login: ch.login, name: ch.name, avatar: ch.avatar, bio: "Streameur passionné. Lives quasi quotidiens, bonne ambiance et communauté au top. Rejoins-nous !", createdAt: Date.now() - 4 * 365 * 24 * 3600e3, followers: 12000 + (ch.login.length * 1371) % 90000, live: ch.live, stream: ch.stream };
+    },
+    async getChannelVods(ch) {
+      await sleep(400);
+      const T = ["Session de la semaine", "On refait le monde", "Retour sur les temps forts", "Marathon spécial communauté", "Questions-réponses détente", "Le run parfait, enfin ?"];
+      return Array.from({ length: 8 }, (_, i) => { const start = Date.now() - (i + 1) * 2 * 24 * 3600e3; const sec = (1.5 + (i % 4)) * 3600; return { id: ch.login + "-v" + i, ch, title: T[i % T.length], start, end: start + sec * 1000, sec, thumb: "", views: 5000 - i * 400 }; });
+    },
     async getStream(ch) { return ch.stream; },
     async search(q) {
       await sleep(250);

@@ -1,6 +1,6 @@
 // Obtention des flux vidéo (live, rediff, clip) et blocage des coupures pub.
 import { json, request } from "./net.js";
-import { store, settings } from "./store.js";
+import { store, settings, getUserToken } from "./store.js";
 import { log } from "./log.js";
 
 const GQL = "https://gql.twitch.tv/gql";
@@ -11,7 +11,10 @@ const TOKEN_Q = `query PlaybackAccessToken_Template($login: String!, $isLive: Bo
 const CLIP_Q = `query VideoAccessToken_Clip($slug: ID!) { clip(slug: $slug) { playbackAccessToken(params: {platform: "web", playerBackend: "mediaplayer", playerType: "site"}) { signature value } videoQualities { frameRate quality sourceURL } } }`;
 
 export async function gql(body) {
-  const r = await json("POST", GQL, { headers: { "Client-ID": WEB_CID, "Device-ID": deviceId, "Content-Type": "text/plain;charset=UTF-8" }, body: JSON.stringify(body) });
+  const headers = { "Client-ID": WEB_CID, "Device-ID": deviceId, "Content-Type": "text/plain;charset=UTF-8" };
+  const tok = getUserToken();                       // votre session, si vous l’avez renseignée
+  if (tok) headers["Authorization"] = "OAuth " + tok;
+  const r = await json("POST", GQL, { headers, body: JSON.stringify(body) });
   if (r.status !== 200 || !r.data) throw new Error("Twitch refuse la lecture (" + r.status + ")");
   return r.data;
 }
@@ -19,7 +22,11 @@ async function token({ login, vodId, playerType }) {
   const d = await gql({ operationName: "PlaybackAccessToken_Template", query: TOKEN_Q,
     variables: { isLive: !!login, login: login || "", isVod: !!vodId, vodID: vodId || "", playerType } });
   const t = login ? d.data?.streamPlaybackAccessToken : d.data?.videoPlaybackAccessToken;
-  if (!t) throw new Error("Jeton de lecture refusé");
+  if (!t) {
+    const err = d.errors && d.errors[0] && d.errors[0].message;
+    if (!getUserToken() && vodId) throw new Error("ABO_REQUIS");
+    throw new Error(err ? "Twitch refuse la lecture : " + err : "Jeton de lecture refusé");
+  }
   return t;
 }
 const rnd = () => String(Math.floor(Math.random() * 1e7));

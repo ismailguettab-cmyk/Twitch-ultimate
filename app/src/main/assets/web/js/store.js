@@ -8,6 +8,13 @@ export const store = {
 
 export const DEFAULTS = { adblock: 0, quality: 0, lowLat: 1, chatPos: 0, chatStyle: 0, chatSize: 0, alerts: 0, resume: 0, sleep: 0, stats: 0, lang: 0 };
 export const settings = Object.assign({}, DEFAULTS, store.get("settings", {}));
+
+/** Jeton de session Twitch (OAuth du site). Permet de lire les rediffs réservées aux abonnés
+ *  des chaînes auxquelles VOUS êtes abonné, et retire les pubs sur ces chaînes (ou partout avec Turbo).
+ *  Fourni volontairement par l’utilisateur ; jamais récupéré automatiquement. */
+function pk(name){ const id = store.get("activeProfile", "_"); return "prof:" + id + ":" + name; }
+export function getUserToken() { return store.get(pk("userToken"), "") || store.get("userToken", "") || ""; }
+export function setUserToken(t) { t ? store.set(pk("userToken"), t) : store.del(pk("userToken")); }
 export const saveSettings = () => store.set("settings", settings);
 
 export const favs = new Set(store.get("favs", []));
@@ -34,3 +41,24 @@ export function continueList() {
     ch: { id: v.id2, login: v.login, name: v.name, avatar: v.avatar, live: false }, watched: v.pos / v.sec,
   }));
 }
+
+/** Rangées de l’accueil : ordre et visibilité choisis dans « Personnaliser l’accueil ». */
+export const HOME_ROWS = [
+  ["hero", "Grand bandeau du live du moment"],
+  ["live", "En direct sur vos chaînes"],
+  ["continue", "Continuer à regarder"],
+  ["today", "Passés en live aujourd’hui"],
+  ["sched", "Prochains lives prévus"],
+  ["clips", "Meilleurs clips du jour"],
+  ["cats", "Catégories populaires"],
+  ["followed", "Vos chaînes suivies"],
+  ["popular", "Populaire dans la catégorie du moment"],
+];
+const HOME_DEFAULT_ON = new Set(["hero", "live", "continue", "today"]);
+export function homeLayout() {
+  const saved = store.get("homeRows", null);
+  const list = (saved || []).filter(x => HOME_ROWS.some(r => r[0] === x.id));
+  for (const [id] of HOME_ROWS) if (!list.some(x => x.id === id)) list.push({ id, on: saved ? false : HOME_DEFAULT_ON.has(id) });
+  return list;
+}
+export const saveHomeLayout = list => store.set("homeRows", list);

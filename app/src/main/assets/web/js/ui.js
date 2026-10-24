@@ -1,8 +1,9 @@
 // Écrans de l’app : accueil, aujourd’hui, suivis, catégories, recherche, réglages, connexion.
 import { $, $$, h, esc, hm, durTxt, agoTxt, clk, kf, thumbStyle, ava, gradBg, hueOf } from "./util.js";
-import { settings, saveSettings, favs, reminders, toggleReminder, continueList, progressOf } from "./store.js";
+import { settings, saveSettings, favs, reminders, toggleReminder, continueList, progressOf, HOME_ROWS, homeLayout, saveHomeLayout, getUserToken, setUserToken } from "./store.js";
 import { CONFIG, DEMO } from "./config.js";
 import { log } from "./log.js";
+import { restoreFocus } from "./nav.js";
 import { previewFocus, previewBlur } from "./preview.js";
 
 let A; // l’objet app (voir app.js)
@@ -11,7 +12,9 @@ export function bindUI(app) { A = app; }
 export const ICON = {
   search: "<circle cx=\"11\" cy=\"11\" r=\"7\"/><path d=\"m20 20-4.5-4.5\"/>",
   home: "<path d=\"M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z\"/>",
+  homeOff: "<rect x=\"3\" y=\"4\" width=\"18\" height=\"16\" rx=\"4\"/><path d=\"M10 9.5v5l4.5-2.5z\" fill=\"currentColor\" stroke=\"none\"/>",
   today: "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 7v5l3.5 2\"/>",
+  vod: "<rect x=\"2.5\" y=\"5\" width=\"19\" height=\"14\" rx=\"3\"/><path d=\"M10 9.5v5l4.5-2.5z\" fill=\"currentColor\" stroke=\"none\"/><path d=\"M2.5 9h19\"/><path d=\"M6 5 7.5 9M11 5l1.5 4M16 5l1.5 4\"/>",
   heart: "<path d=\"M12 20s-7-4.4-9.2-8.6C1.2 8.2 3.2 4.5 6.8 4.5c2 0 3.4 1 5.2 3 1.8-2 3.2-3 5.2-3 3.6 0 5.6 3.7 4 6.9C19 15.6 12 20 12 20z\"/>",
   grid: "<rect x=\"3\" y=\"3\" width=\"7.5\" height=\"7.5\" rx=\"2\"/><rect x=\"13.5\" y=\"3\" width=\"7.5\" height=\"7.5\" rx=\"2\"/><rect x=\"3\" y=\"13.5\" width=\"7.5\" height=\"7.5\" rx=\"2\"/><rect x=\"13.5\" y=\"13.5\" width=\"7.5\" height=\"7.5\" rx=\"2\"/>",
   set: "<path d=\"M4 7h10M18 7h2M4 17h2M10 17h10\"/><circle cx=\"16\" cy=\"7\" r=\"2.5\"/><circle cx=\"8\" cy=\"17\" r=\"2.5\"/>",
@@ -21,21 +24,36 @@ export const PAUSE = "<svg viewBox=\"0 0 24 24\"><rect x=\"5\" y=\"4\" width=\"5
 export const CHATI = "<svg viewBox=\"0 0 24 24\"><path d=\"M4 4h16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H9l-5 4V5a1 1 0 0 1 1-1z\"/></svg>";
 
 /* ---------- menu latéral ---------- */
-const NAVS = [["search", "Recherche", "search"], ["home", "Accueil", "home"], ["today", "Aujourd’hui", "today"], ["following", "Suivis", "heart"], ["cats", "Catégories", "grid"], ["settings", "Réglages", "set"]];
+function vodBadge(c) {
+  // Micro-vignette indiquant si les rediffs de la chaîne sont accessibles (publiques / abonné) ou verrouillées.
+  const hasVod = A.D.vods && A.D.vods.some(v => v.ch.login === c.login);
+  const locked = c.subOnlyVods;   // marqué si Twitch a refusé une rediff réservée
+  if (locked) return `<span class="vbadge locked" title="Rediffusions réservées aux abonnés">🔒 VOD</span>`;
+  if (hasVod) return `<span class="vbadge ok" title="Rediffusions disponibles">● VOD</span>`;
+  return "";
+}
+function liveBadge() { return `<span class="ph-live"><span class="lp-eq"><i></i><i></i><i></i></span>En live</span>`; }
+const NAVS = [["search", "Recherche", "search"], ["home", "Lives suivis", "home"], ["today", "VOD", "vod"], ["following", "Suivis", "heart"], ["cats", "Catégories", "grid"], ["settings", "Réglages", "set"]];
 export function renderSide(view) {
   const side = $("#side");
   if (!side.children.length) {
     for (const [id, label, ic] of NAVS) {
-      const e = h("div", "nav focusable", `<svg viewBox="0 0 24 24">${ICON[ic]}</svg><span>${label}</span>`);
+      const iconHtml = id === "home"
+        ? `<span class="navic" id="navic-home"><svg class="ic-off" viewBox="0 0 24 24">${ICON.homeOff}</svg><span class="ic-on"><i></i><i></i><i></i></span></span>`
+        : `<svg viewBox="0 0 24 24">${ICON[ic]}</svg>`;
+      const e = h("div", "nav focusable", `${iconHtml}<span>${label}</span>`);
       e.dataset.nav = id; e.dataset.key = "nav:" + id;
       e._enter = () => A.show(id, { fromSide: true });
       side.appendChild(e);
     }
   }
+  const anyLive = A.lives().length > 0;
+  const nic = $("#navic-home");
+  if (nic) nic.classList.toggle("live", anyLive);
   const n = A.D.vods.length;
   for (const e of $$(".nav", side)) {
     const id = e.dataset.nav;
-    e.classList.toggle("active", view === id || (id === "cats" && view === "cat"));
+    e.classList.toggle("active", view === id || (id === "cats" && view === "cat") || (id === "following" && view === "prof") || (id === "settings" && (view === "homecfg" || view === "subs")));
     let b = $(".bubble", e);
     if (id === "today") { if (n) { if (!b) { b = h("em", "bubble"); e.appendChild(b); } b.textContent = n; } else if (b) b.remove(); }
   }
@@ -45,7 +63,7 @@ export function renderSide(view) {
 const star = c => favs.has(c.login) ? " <span class=\"star\">★</span>" : "";
 export function liveCard(c) {
   const s = c.stream || {};
-  const e = h("div", "card focusable", `<div class="thumb" style="${thumbStyle(s.thumb, c.login)}"><span class="b-live">En direct</span>${s.viewers != null ? `<span class="t-meta">${kf(s.viewers)} spectateurs</span>` : ""}</div>
+  const e = h("div", "card focusable", `<div class="thumb" style="${thumbStyle(s.thumb, c.login)}"><span class="b-live">En direct</span>${vodBadge(c)}${s.viewers != null ? `<span class="t-meta">${kf(s.viewers)} spectateurs</span>` : ""}</div>
     <div class="card-info">${ava(c, 56, false)}<div class="ci"><div class="c-name">${esc(c.name)}${star(c)}</div><div class="c-title">${esc(s.title)}</div><div class="c-sub">${esc(s.cat || "")}</div></div></div>`);
   e.dataset.key = "live:" + c.login;
   e._enter = () => A.openPlayer({ ch: c, mode: "live" });
@@ -68,12 +86,13 @@ export function clipCard(x) {
   e._enter = () => A.openPlayer({ ch: x.ch, mode: "clip", clip: x });
   return e;
 }
-export function catCard(c, big = false) {
-  const art = c.art
+export function catCard(c) {
+  const inner = c.art
     ? `<div class="art" style="background-image:url(\x27${esc(c.art)}\x27),${gradBg(hueOf(c.name), 3)}"></div>`
-    : `<div class="art" style="background:${gradBg(hueOf(c.name), c.name.length)}"><b>${esc(c.name)}</b><em>${c.glyph || ""}</em></div>`;
-  const viewers = c.viewers != null ? `<div class="cv"><span class="dot sm"></span>${c.approx ? "≈ " : ""}${kf(c.viewers)} spectateurs</div>` : "";
-  const e = h("div", "cat focusable" + (big ? " big" : ""), `${art}<div class="cm"><span class="cn">${esc(c.name)}</span>${c.rank ? `<span class="rk">n° ${c.rank}</span>` : ""}</div>${viewers}`);
+    : `<div class="art" style="background:${gradBg(hueOf(c.name), c.name.length)}"><em>${c.glyph || ""}</em></div>`;
+  const rank = c.rank ? `<span class="cat-rank">${c.rank}</span>` : "";
+  const viewers = c.viewers != null ? `<div class="cv"><span class="dot sm"></span>${kf(c.viewers)} spectateurs</div>` : "";
+  const e = h("div", "cat focusable", `<div class="cat-art">${inner}${rank}</div><div class="cm"><span class="cn">${esc(c.name)}</span>${viewers}</div>`);
   e.dataset.key = "cat:" + c.id;
   e._enter = () => A.openCategory(c);
   return e;
@@ -125,120 +144,152 @@ function btn(label, cls, fn, key, icon = "") {
   return b;
 }
 
-/* ---------- accueil ---------- */
+/* ---------- Lives suivis (page d’accueil) ---------- */
+// Grande carte de live avec aperçu vidéo + son au survol prolongé. Utilisée sur la page Lives suivis.
+function bigLiveCard(c, suggested = false) {
+  const s = c.stream || {};
+  const since = s.startedAt ? durTxt((Date.now() - s.startedAt) / 1000) : "";
+  const e = h("div", "lcard focusable", `<div class="thumb" style="${thumbStyle(s.thumbBig || s.thumb, c.login)}">
+      <span class="b-live">En direct</span>${vodBadge(c)}${s.viewers != null ? `<span class="t-meta"><span class="dot sm"></span>${kf(s.viewers)}</span>` : ""}${since ? `<span class="b-since">${since}</span>` : ""}</div>
+    <div class="card-info">${ava(c, 64, false)}<div class="ci"><div class="c-name">${esc(c.name)}${favs.has(c.login) ? " <span class=\"star\">★</span>" : ""}</div>
+      <div class="c-title">${esc(s.title || "")}</div><div class="c-sub">${esc(s.cat || "")}${suggested && s.viewers != null ? " · " + kf(s.viewers) + " spectateurs" : ""}</div></div></div>`);
+  e.dataset.key = "live:" + c.login;
+  e._enter = () => A.openPlayer({ ch: c, mode: "live" });
+  e._focus = () => previewFocus(e.querySelector(".thumb"), c);
+  e._blur = previewBlur;
+  return e;
+}
 export function renderHome() {
   const sc = $("#home-scroll"), D = A.D, lives = A.lives();
   sc.innerHTML = "";
-  const f = lives[0];
-  const hero = h("section", "hero");
-  hero.dataset.unit = "top";
-  A.heroHue = f ? hueOf(f.login) : 270;
-  if (f) {
-    const s = f.stream;
-    const bg = s.thumbBig ? `<img class="hero-img" src="${esc(s.thumbBig)}" alt="">` : `<canvas id="hero-cv" width="960" height="540"></canvas>`;
-    hero.innerHTML = `${bg}<div class="hero-shade"></div><div class="hero-c"><div class="live-line"><span class="dot"></span>${favs.has(f.login) ? "En direct sur une de vos chaînes favorites" : "En direct sur vos chaînes"}</div>
-      <h1>${esc(f.name)}</h1><p class="hero-title">${esc(s.title)}</p>
-      <div class="meta"><span>${esc(s.cat)}</span><span>${kf(s.viewers)} spectateurs</span><span>depuis ${durTxt((Date.now() - s.startedAt) / 1000)}</span></div><div class="btns"></div></div>`;
-    const b = $(".btns", hero);
-    b.appendChild(btn("Regarder le live", "primary", () => A.openPlayer({ ch: f, mode: "live" }), "hero:watch", PLAY));
-    b.appendChild(btn("Avec le chat", "", () => A.openPlayer({ ch: f, mode: "live", chat: true }), "hero:chat", CHATI));
-    for (const x of $$(".btn", b)) { x._focus = () => previewFocus(hero, f, 1500, false); x._blur = previewBlur; }
-    const last = D.vods.find(v => v.ch.login === f.login);
-    if (last) { const x = btn("Dernière rediff", "", () => A.openPlayer({ ch: f, mode: "vod", vod: last }), "hero:vod"); x._focus = () => previewFocus(hero, f, 1500, false); x._blur = previewBlur; b.appendChild(x); }
+  if (lives.length) {
+    sc.appendChild(h("div", "lh-head", `<h1 class="page-h">Lives suivis</h1><p class="page-sub">${lives.length} ${lives.length > 1 ? "chaînes que vous suivez sont en direct" : "chaîne que vous suivez est en direct"}.</p>`));
+    const grid = h("div", "lgrid");
+    lives.forEach(c => grid.appendChild(bigLiveCard(c)));
+    sc.appendChild(grid);
   } else {
-    const v = D.vods[0];
-    hero.innerHTML = `<canvas id="hero-cv" width="960" height="540"></canvas><div class="hero-shade"></div><div class="hero-c"><h1 class="small">Aucune de vos chaînes n’est en direct</h1><p class="hero-title">${v ? `La dernière rediff de ${esc(v.ch.name)} est prête.` : "Explorez les catégories populaires en attendant."}</p><div class="btns"></div></div>`;
-    const b = $(".btns", hero);
-    if (v) b.appendChild(btn(`Regarder ${v.ch.name}`, "primary", () => A.openPlayer({ ch: v.ch, mode: "vod", vod: v }), "hero:vod", PLAY));
-    b.appendChild(btn("Voir les catégories", v ? "" : "primary", () => A.show("cats"), "hero:cats"));
+    sc.appendChild(h("div", "lh-head", `<h1 class="page-h">Personne en direct</h1><p class="page-sub">Aucune de vos chaînes suivies n’est en live. En attendant, voici ce qui buzze en France en ce moment.</p>`));
+    const grid = h("div", "lgrid");
+    if (D.topFr && D.topFr.length) D.topFr.forEach(c => grid.appendChild(bigLiveCard(c, true)));
+    else grid.appendChild(h("p", "loading-row", "<span class=\"spin\"></span>Chargement des lives du moment…"));
+    sc.appendChild(grid);
   }
-  sc.appendChild(hero);
-
-  if (lives.length) sc.appendChild(row("En direct sur vos chaînes", lives.map(liveCard), `<span class="count">${lives.length}</span>`, "row-live"));
-  const cont = continueList();
-  if (cont.length) sc.appendChild(row("Continuer à regarder", cont.map(vodCard)));
-  if (D.vods.length) sc.appendChild(row("Passés en live aujourd’hui", D.vods.map(vodCard), `<span class="hint">les rediffusions des dernières 24 heures</span>`));
-  else if (D.loadingExtra) sc.appendChild(h("p", "loading-row", "<span class=\"spin\"></span>Recherche des lives d’aujourd’hui…"));
-  if (D.sched.length) sc.appendChild(row("Prochains lives prévus", D.sched.map(schedCard), `<span class="hint">OK pour être prévenu au début</span>`));
-  if (D.clips.length) sc.appendChild(row("Meilleurs clips du jour", D.clips.map(clipCard), `<span class="hint">vos chaînes, dernières 24 heures</span>`));
-  if (D.cats.length) { const r = row("Catégories populaires", D.cats.slice(0, 20).map(c => catCard(c)), `<span class="hint">classées par nombre de spectateurs</span>`); r.classList.add("cats-row"); sc.appendChild(r); }
-  const fol = [...D.followed].sort((a, b) => (b.live - a.live) || (favs.has(b.login) - favs.has(a.login)) || (D.vods.some(v => v.ch.login === b.login) - D.vods.some(v => v.ch.login === a.login))).slice(0, 40);
-  if (fol.length) sc.appendChild(row("Vos chaînes suivies", fol.map(avCard), `<span class="hint">${D.followed.length} au total</span>`));
-  if (D.catRow && D.catRow.list.length) sc.appendChild(row(`Populaire en ${esc(D.catRow.cat.name)}`, D.catRow.list.slice(0, 12).map(liveCard)));
   sc.appendChild(h("div", "spacer"));
 }
 
-/* ---------- aujourd’hui ---------- */
-export function renderToday() {
-  const pg = $("#today-page"), D = A.D, H = 3600e3;
-  const sessions = [
-    ...D.vods.map(v => ({ ...v, live: false })),
-    ...A.lives().map(c => ({ ch: c, title: c.stream.title, start: c.stream.startedAt, end: Date.now(), sec: (Date.now() - c.stream.startedAt) / 1000, thumb: c.stream.thumb, live: true, viewers: c.stream.viewers, cat: c.stream.cat })),
-  ];
-  const ws = Date.now() - 24 * H, we = Date.now() + H, span = we - ws, pct = t => Math.max(0, (t - ws) / span * 100);
-  const by = new Map();
-  sessions.forEach(s => { if (!by.has(s.ch.login)) by.set(s.ch.login, []); by.get(s.ch.login).push(s); });
-  const lastEnd = ss => Math.max(0, ...ss.filter(x => !x.live).map(x => x.end));
-  const rows = [...by.values()].sort((a, b) => (a[0].ch.live - b[0].ch.live) || lastEnd(b) - lastEnd(a));
-  const off = D.followed.filter(c => !by.has(c.login));
-  pg.innerHTML = `<h1 class="page-h">Qui était en ligne aujourd’hui</h1><p class="page-sub">Les dernières 24 heures de vos chaînes suivies. Chaque barre est un live : choisissez-en une pour lancer la rediffusion, ou rejoindre le direct s’il est encore en cours.</p>
-    <div class="detail" id="detail"></div><div class="tl"><div class="tl-axis" id="axis"></div><div id="tlrows"></div></div>
-    ${D.loadingExtra ? "<p class=\"off-note\">Recherche des rediffusions en cours…</p>" : ""}
-    ${off.length ? `<p class="off-note">Pas de live aujourd’hui : ${off.slice(0, 25).map(c => esc(c.name)).join(", ")}${off.length > 25 ? ` et ${off.length - 25} autres` : ""}.</p>` : ""}`;
-  if (!rows.length) { $("#detail").innerHTML = "<p class=\"empty\">Aucune de vos chaînes n’a streamé ces dernières 24 heures.</p>"; return; }
-  const ax = $("#axis"), d0 = new Date(ws); d0.setMinutes(0, 0, 0);
-  for (let t = d0.getTime() + H; t < we; t += 3 * H) {
-    if (Math.abs(t - Date.now()) < 1.6 * H) continue;
-    ax.appendChild(h("span", "", hm(t).replace(":00", " h"))).style.left = pct(t) + "%";
-  }
-  const nl = h("span", "nowlab", "maintenant"); nl.style.left = pct(Date.now()) + "%"; ax.appendChild(nl);
-  const box = $("#tlrows");
-  for (const ss of rows) {
-    const c = ss[0].ch;
-    const r = h("div", "tl-row", `<div class="tl-label">${ava(c, 40, false)}<span>${esc(c.name)}</span>${c.live ? "<span class=\"dot sm\"></span>" : ""}</div>`);
-    const tr = h("div", "tl-track");
-    tr.style.setProperty("--hourw", (100 / 25) + "%");
-    const nw = h("div", "tl-now"); nw.style.left = pct(Date.now()) + "%"; tr.appendChild(nw);
-    for (const s of ss.sort((x, y) => (x.live - y.live) || y.end - x.end)) {
-      const b = h("div", "bar focusable" + (s.live ? " live" : ""), s.live ? "En direct" : esc(s.title));
-      const l = pct(s.start), w = Math.max(1.4, pct(s.end) - l);
-      const hu = hueOf(c.login);
-      b.style.left = l + "%"; b.style.width = w + "%";
-      b.style.background = s.live ? `linear-gradient(90deg,hsl(${hu},70%,45%),#ff4d6d,hsl(${hu},70%,45%))` : `linear-gradient(90deg,hsl(${hu},65%,42%),hsl(${hu + 40},70%,52%))`;
-      b.dataset.key = "bar:" + (s.live ? "live:" + c.login : s.id);
-      b._focus = () => detail(s);
-      b._enter = () => s.live ? A.openPlayer({ ch: c, mode: "live" }) : A.openPlayer({ ch: c, mode: "vod", vod: s });
-      tr.appendChild(b);
-    }
-    r.appendChild(tr);
+/* ---------- personnaliser l’accueil ---------- */
+export function renderHomeCfg() {
+  const pg = $("#hc-page"), L = homeLayout();
+  pg.innerHTML = `<h1 class="page-h">Personnaliser l’accueil</h1><p class="page-sub">OK sur une rangée pour l’afficher ou la masquer. Les flèches ▲ ▼ à droite changent son ordre.</p><div class="hc" id="hc"></div>`;
+  const box = $("#hc");
+  const redraw = key => { saveHomeLayout(L); A.S.homeDirty = true; renderHomeCfg(); restoreFocus($("#v-homecfg"), key); };
+  L.forEach((it, i) => {
+    const label = HOME_ROWS.find(r => r[0] === it.id)[1];
+    const r = h("div", "hc-row" + (it.on ? " on" : ""));
+    const t = h("div", "hc-t focusable", `<span class="sw"><i></i></span><span class="hc-l">${label}</span><span class="hc-s">${it.on ? "Affichée" : "Masquée"}</span>`);
+    t.dataset.key = "hc:" + it.id;
+    t._enter = () => { it.on = !it.on; redraw("hc:" + it.id); };
+    const up = h("div", "hc-m focusable" + (i === 0 ? " off" : ""), "▲");
+    up.dataset.key = "hcu:" + it.id;
+    up._enter = () => { if (i === 0) return; [L[i - 1], L[i]] = [L[i], L[i - 1]]; redraw("hcu:" + it.id); };
+    const dn = h("div", "hc-m focusable" + (i === L.length - 1 ? " off" : ""), "▼");
+    dn.dataset.key = "hcd:" + it.id;
+    dn._enter = () => { if (i === L.length - 1) return; [L[i + 1], L[i]] = [L[i], L[i + 1]]; redraw("hcd:" + it.id); };
+    r.append(t, up, dn);
     box.appendChild(r);
-  }
+  });
 }
-function detail(s) {
-  const d = $("#detail");
+
+/* ---------- aujourd’hui ---------- */
+// Liste des lives des dernières 24 h, regroupés (en direct / aujourd’hui / hier), avec un grand aperçu à droite.
+export function renderToday() {
+  const pg = $("#today-page"), D = A.D;
+  const lives = A.lives().map(c => ({ ch: c, title: c.stream.title, start: c.stream.startedAt, end: Date.now(), sec: (Date.now() - c.stream.startedAt) / 1000, thumb: c.stream.thumb, live: true, viewers: c.stream.viewers, cat: c.stream.cat }));
+  const todayStr = new Date().toDateString();
+  const groups = [
+    ["Ratés aujourd’hui", D.vods.filter(v => new Date(v.end).toDateString() === todayStr)],
+    ["Ratés hier", D.vods.filter(v => new Date(v.end).toDateString() !== todayStr)],
+    ["Encore en direct", lives],
+  ].filter(g => g[1].length);
+  const off = D.followed.filter(c => !c.live && !D.vods.some(v => v.ch.login === c.login));
+  pg.innerHTML = `<div class="td-head"><h1 class="page-h">VOD</h1><p class="page-sub">${D.vods.length ? `Vous avez raté ${D.vods.length} live${D.vods.length > 1 ? "s" : ""} ces dernières 24 heures. Choisissez-en un pour lancer la rediffusion.` : "Aucun live raté ces dernières 24 heures."}${D.loadingExtra ? " Recherche en cours…" : ""}</p></div>
+    <div class="td"><div class="td-list" id="td-list" data-scroll="y" data-mode="near"></div><div class="td-panel" id="td-panel"></div></div>`;
+  const list = $("#td-list");
+  if (!groups.length) { $("#td-panel").innerHTML = "<p class=\"empty\">Rien à rattraper pour le moment.</p>"; return; }
+  const W0 = Date.now() - 24 * 3600e3, span = 24 * 3600e3, pct = t => Math.max(0, Math.min(100, (t - W0) / span * 100));
+  for (const [title, items] of groups) {
+    list.appendChild(h("div", "td-g", esc(title)));
+    for (const s of items) {
+      const pos = s.live ? 0 : progressOf(s.id);
+      const left = pct(s.start), width = Math.max(1.5, pct(s.end) - left);
+      const it = h("div", "td-item focusable" + (s.live ? " is-live" : ""), `${ava(s.ch, 64, false)}
+        <div class="td-main"><div class="td-name">${esc(s.ch.name)}${s.live ? "<span class=\"td-tag live\">En direct</span>" : pos ? "<span class=\"td-tag\">Commencé</span>" : "<span class=\"td-tag new\">Nouveau</span>"}</div>
+        <div class="td-title">${esc(s.title)}</div>
+        <div class="td-meta">${s.live ? `depuis ${hm(s.start)}, ${kf(s.viewers)} spectateurs` : `${hm(s.start)} à ${hm(s.end)}, ${durTxt(s.sec)}`}</div>
+        <div class="td-strip"><i style="left:${left}%;width:${width}%"></i>${pos ? `<b style="left:${left}%;width:${width * pos / s.sec}%"></b>` : ""}</div></div>
+        <div class="td-when">${s.live ? "" : agoTxt(s.end).replace("il y a ", "")}</div>`);
+      it.dataset.key = "td:" + (s.live ? "live:" + s.ch.login : s.id);
+      it._focus = () => panel(s);
+      it._enter = () => s.live ? A.openPlayer({ ch: s.ch, mode: "live" }) : A.openPlayer({ ch: s.ch, mode: "vod", vod: s });
+      list.appendChild(it);
+    }
+  }
+  if (off.length) list.appendChild(h("p", "off-note", `Pas de live aujourd’hui : ${off.slice(0, 20).map(c => esc(c.name)).join(", ")}${off.length > 20 ? ` et ${off.length - 20} autres` : ""}.`));
+}
+function panel(s) {
+  const d = $("#td-panel");
   if (!d) return;
   const pos = s.live ? 0 : progressOf(s.id);
-  d.innerHTML = `<div class="d-thumb" style="${thumbStyle(s.thumb, s.ch.login + (s.id || ""))}"><span class="${s.live ? "b-live" : "b-vod"}">${s.live ? "En direct" : "Rediffusion"}</span><span class="t-meta">${durTxt(s.sec)}</span>${pos ? `<div class="prog"><i style="width:${pos / s.sec * 100}%"></i></div>` : ""}</div>
-    <div><div class="d-name">${ava(s.ch, 52, false)}${esc(s.ch.name)}</div><h2 class="d-title">${esc(s.title)}</h2>
-    <div class="d-meta">${s.live ? `En direct depuis ${hm(s.start)}, ${kf(s.viewers)} spectateurs<br>${esc(s.cat || "")}` : `Diffusé de ${hm(s.start)} à ${hm(s.end)}, soit ${durTxt(s.sec)}`}</div>
-    <div class="d-cta">${s.live ? "OK pour rejoindre le direct" : pos ? `OK pour reprendre à ${clk(pos)}` : "OK pour regarder la rediffusion"}</div></div>`;
+  d.innerHTML = `<div class="tp-thumb" style="${thumbStyle(s.thumb, s.ch.login + (s.id || ""))}"><span class="${s.live ? "b-live" : "b-vod"}">${s.live ? "En direct" : "Rediffusion"}</span><span class="t-meta">${durTxt(s.sec)}</span>${pos ? `<div class="prog"><i style="width:${pos / s.sec * 100}%"></i></div>` : ""}</div>
+    <div class="tp-name">${ava(s.ch, 52, false)}${esc(s.ch.name)}</div>
+    <h2 class="tp-title">${esc(s.title)}</h2>
+    <div class="tp-meta">${s.live ? `En direct depuis ${hm(s.start)}${s.cat ? `, ${esc(s.cat)}` : ""}` : `Diffusé de ${hm(s.start)} à ${hm(s.end)}, terminé ${agoTxt(s.end)}`}</div>
+    <div class="tp-cta">${PLAY}${s.live ? "OK pour rejoindre le direct" : pos ? `OK pour reprendre à ${clk(pos)}` : "OK pour regarder la rediffusion"}</div>`;
 }
 
 /* ---------- suivis ---------- */
 function tile(c) {
-  const st = chStatus(c);
-  const e = h("div", "tile focusable", `${ava(c, 120)}<div class="n">${esc(c.name)}${star(c)}</div><div class="s ${st.cls}">${esc(st.t)}</div>${c.live ? `<div class="s">${esc(c.stream.cat || "")}</div>` : ""}`);
+  const status = c.live
+    ? `<div class="s live"><span class="live-pill"><span class="lp-eq"><i></i><i></i><i></i></span>En live</span></div><div class="s2">${esc(c.stream.cat || "")}</div>`
+    : `<div class="s">Accéder au profil</div>`;
+  const e = h("div", "tile focusable" + (c.live ? " is-live" : ""), `${ava(c, 120)}<div class="n">${esc(c.name)}${star(c)}</div>${status}`);
   e.dataset.key = "tile:" + c.login;
-  e._enter = () => A.openChannel(c);
+  e._enter = () => c.live ? A.channelChoice(c, e) : A.openProfile(c);
   return e;
 }
 export function renderFollowing() {
   const pg = $("#fol-page"), D = A.D, live = A.lives();
   const off = D.followed.filter(c => !c.live).sort((a, b) => (favs.has(b.login) - favs.has(a.login)) || (D.vods.some(v => v.ch.login === b.login) - D.vods.some(v => v.ch.login === a.login)) || a.name.localeCompare(b.name));
-  pg.innerHTML = `<h1 class="page-h">Vos chaînes suivies</h1><p class="page-sub">${live.length} en direct sur ${D.followed.length}. Les favoris (★) passent en premier ; ajoutez-en depuis le lecteur.</p>
-    ${live.length ? "<div class=\"sect\">En direct</div><div class=\"grid g5\" id=\"g-live\"></div>" : ""}<div class="sect">Hors ligne</div><div class="grid g5" id="g-off"></div>`;
-  live.forEach(c => $("#g-live").appendChild(tile(c)));
-  off.slice(0, 100).forEach(c => $("#g-off").appendChild(tile(c)));
+  pg.innerHTML = `<h1 class="page-h">Vos chaînes suivies</h1><p class="page-sub">${live.length} en direct sur ${D.followed.length}. Les favoris (★) passent en premier.</p>
+    ${live.length ? "<div class=\"sect\">En direct</div><div class=\"grid g5\" id=\"g-live\"></div>" : ""}${off.length ? "<div class=\"sect\">Toutes vos chaînes</div><div class=\"grid g5\" id=\"g-off\"></div>" : ""}`;
+  if (live.length) live.forEach(c => $("#g-live").appendChild(tile(c)));
+  if (off.length) off.slice(0, 120).forEach(c => $("#g-off").appendChild(tile(c)));
+}
+
+/* ---------- profil d’un streamer ---------- */
+export async function renderProfile(ch) {
+  const pg = $("#prof-page");
+  pg.innerHTML = `<div class="prof-head" id="prof-head"><span class="spin big"></span></div><div class="prof-body" id="prof-body"></div>`;
+  let info = ch;
+  try { info = await A.P.getChannelProfile(ch); } catch (e) { log("WARN", e.message); }
+  if (!pg.isConnected || A.S.prof !== ch) return;
+  const since = info.createdAt ? new Date(info.createdAt).getFullYear() : null;
+  $("#prof-head").innerHTML = `<div class="ph-bg" style="background:${gradBg(hueOf(info.login), 5)}"></div>
+    <div class="ph-main">${ava({ ...info, live: ch.live }, 180, true)}
+      <div class="ph-info"><h1 class="ph-name">${esc(info.name)}${ch.live ? liveBadge() : ""}</h1>
+        <div class="ph-stats">${info.followers != null ? `<span><b>${kf(info.followers)}</b> abonnés</span>` : ""}${since ? `<span>Sur Twitch depuis <b>${since}</b></span>` : ""}</div>
+        ${info.bio ? `<p class="ph-bio">${esc(info.bio)}</p>` : ""}
+        <div class="btns" id="ph-btns"></div></div></div>`;
+  const b = $("#ph-btns");
+  if (ch.live) b.appendChild(btn("Regarder le live", "primary", () => A.openPlayer({ ch, mode: "live" }), "ph:live", PLAY));
+  $("#prof-body").innerHTML = `<div class="sect">Rediffusions</div><div class="grid g4" id="prof-vods"><p class="loading-row"><span class="spin"></span>Chargement des rediffusions…</p></div>`;
+  let vods = [];
+  try { vods = await A.P.getChannelVods(ch); } catch (e) { log("WARN", e.message); }
+  if (!pg.isConnected || A.S.prof !== ch) return;
+  const g = $("#prof-vods");
+  g.innerHTML = vods.length ? "" : "<p class=\"empty\">Cette chaîne n’a aucune rediffusion disponible.</p>";
+  vods.forEach(v => g.appendChild(vodCard(v)));
+  restoreFocus($("#v-prof"), ch.live ? "ph:live" : null);
 }
 
 /* ---------- catégories ---------- */
@@ -247,17 +298,22 @@ export function renderCats() {
   pg.innerHTML = `<h1 class="page-h">Catégories populaires</h1><p class="page-sub">Classées par nombre de spectateurs en ce moment sur Twitch.</p><div class="grid g6" id="g-cats"></div>`;
   A.D.cats.forEach(c => $("#g-cats").appendChild(catCard(c)));
 }
+let catFilter = "";   // "" = international, "fr" = français
 export async function renderCat(cat) {
   const pg = $("#cat-page");
-  const lang = settings.lang === 1 ? "fr" : "";
-  pg.innerHTML = `<h1 class="page-h">${esc(cat.name)}</h1><p class="page-sub">${cat.viewers != null ? `${cat.approx ? "≈ " : ""}${kf(cat.viewers)} spectateurs en ce moment. ` : ""}${lang ? "Streams en français, classés" : "Classés"} par nombre de spectateurs.</p><div class="grid g4" id="g-cat"><p class="loading-row"><span class="spin"></span>Chargement…</p></div>`;
+  if (A.S.catNew) { catFilter = settings.lang === 1 ? "fr" : ""; A.S.catNew = false; }
+  pg.innerHTML = `<h1 class="page-h">${esc(cat.name)}</h1>
+    <div class="cat-head"><p class="page-sub">${cat.viewers != null ? `${kf(cat.viewers)} spectateurs en ce moment. ` : ""}Classés par nombre de spectateurs.</p>
+    <div class="cat-filter"><div class="cf-opt focusable${catFilter === "" ? " on" : ""}" data-key="cf:all">International</div><div class="cf-opt focusable${catFilter === "fr" ? " on" : ""}" data-key="cf:fr">Français</div></div></div>
+    <div class="grid g4" id="g-cat"><p class="loading-row"><span class="spin"></span>Chargement…</p></div>`;
+  $(".cf-opt[data-key=cf\\:all]", pg)._enter = () => { if (catFilter !== "") { catFilter = ""; renderCat(cat); A.focusKey("cf:all"); } };
+  $(".cf-opt[data-key=cf\\:fr]", pg)._enter = () => { if (catFilter !== "fr") { catFilter = "fr"; renderCat(cat); A.focusKey("cf:fr"); } };
   try {
-    const list = await A.P.getCategoryStreams(cat, lang);
+    const list = await A.P.getCategoryStreams(cat, catFilter);
     if (!pg.isConnected || A.S.cat !== cat) return;
     const g = $("#g-cat");
-    g.innerHTML = list.length ? "" : "<p class=\"empty\">Personne n’est en direct dans cette catégorie pour le moment.</p>";
+    g.innerHTML = list.length ? "" : `<p class="empty">Personne ${catFilter === "fr" ? "en français " : ""}n’est en direct dans cette catégorie pour le moment.</p>`;
     list.forEach(c => g.appendChild(liveCard(c)));
-    if (A.S.view === "cat") A.focusFirstIn("#v-cat");
   } catch (e) {
     log("ERR", e);
     $("#g-cat").innerHTML = `<p class="empty">Impossible de charger cette catégorie. ${esc(e.message)}</p>`;
@@ -268,12 +324,18 @@ export async function renderCat(cat) {
 let Q = "", qTimer = null, qSeq = 0;
 export function renderSearch() {
   const pg = $("#search-page");
-  pg.innerHTML = `<h1 class="page-h">Recherche</h1><p class="page-sub">Chaînes et catégories. Tapez avec la télécommande ou un clavier.</p>
+  pg.innerHTML = `<h1 class="page-h">Recherche</h1><p class="page-sub">Tapez le nom d’une chaîne. Les résultats s’affichent au fur et à mesure.</p>
     <div class="srch"><div class="kb"><div class="sbox" id="sbox"></div><div class="kgrid" id="kgrid"></div></div><div class="sres" id="sres"></div></div>`;
   const g = $("#kgrid");
-  [..."abcdefghijklmnopqrstuvwxyz0123456789"].forEach(ch => { const k = h("div", "key focusable", ch); k.dataset.key = "k:" + ch; k._enter = () => typeQ(ch); g.appendChild(k); });
-  const sp = h("div", "key wide focusable", "Espace"); sp.dataset.key = "k:sp"; sp._enter = () => typeQ(" "); g.appendChild(sp);
-  const del = h("div", "key wide focusable", "Effacer"); del.dataset.key = "k:del"; del._enter = () => backQ(); g.appendChild(del);
+  // Clavier en lignes régulières (7 colonnes). dataset.row borne la navigation verticale au clavier.
+  [..."abcdefghijklmnopqrstuvwxyz0123456789"].forEach(ch => {
+    const k = h("div", "key focusable", ch);
+    k.dataset.key = "k:" + ch; k.dataset.kb = "1";
+    k._enter = () => typeQ(ch);
+    g.appendChild(k);
+  });
+  const sp = h("div", "key wide focusable", "Espace"); sp.dataset.key = "k:sp"; sp.dataset.kb = "1"; sp._enter = () => typeQ(" "); g.appendChild(sp);
+  const del = h("div", "key wide focusable", "Effacer"); del.dataset.key = "k:del"; del.dataset.kb = "1"; del._enter = () => backQ(); g.appendChild(del);
   updSearch();
 }
 export function typeQ(ch) { if (Q.length < 30) Q += ch; updSearch(); }
@@ -281,45 +343,44 @@ export function backQ() { if (!Q) return false; Q = Q.slice(0, -1); updSearch();
 function updSearch() {
   const b = $("#sbox");
   if (!b) return;
-  b.innerHTML = Q ? `<span>${esc(Q).replace(/ /g, "&nbsp;")}</span><span class="cur"></span>` : "<span class=\"cur\"></span><span class=\"ph\">Nom d’une chaîne ou d’une catégorie</span>";
+  b.innerHTML = Q ? `<span>${esc(Q).replace(/ /g, "&nbsp;")}</span><span class="cur"></span>` : "<span class=\"cur\"></span><span class=\"ph\">Nom d’une chaîne</span>";
   clearTimeout(qTimer);
   const q = Q.trim().toLowerCase();
-  if (q.length < 2) { showResults(A.lives().slice(0, 6), A.D.cats.slice(0, 4), true); return; }
+  const r = $("#sres");
+  if (q.length < 2) { r.innerHTML = "<div class=\"sres-hint\">Commencez à taper pour voir des chaînes.</div>"; return; }
+  r.classList.add("searching");
   qTimer = setTimeout(async () => {
     const my = ++qSeq;
     try {
-      const r = await A.P.search(q);
-      if (my === qSeq) showResults(r.channels, r.categories, false);
-    } catch (e) { log("ERR", e); }
-  }, 400);
+      const res = await A.P.search(q);
+      if (my !== qSeq) return;
+      r.classList.remove("searching");
+      showResults(res.channels);
+    } catch (e) { log("ERR", e); if (my === qSeq) r.classList.remove("searching"); }
+  }, 350);
 }
-function showResults(chans, cats, suggest) {
+function showResults(chans) {
   const r = $("#sres");
   if (!r) return;
   r.innerHTML = "";
-  if (!chans.length && !cats.length) { r.innerHTML = `<p class="empty">Aucun résultat pour « ${esc(Q.trim())} ». Vérifiez l’orthographe ou cherchez une catégorie.</p>`; return; }
-  if (chans.length) {
-    r.appendChild(h("h3", "", suggest ? "Vos chaînes en direct" : "Chaînes"));
-    const l = h("div", "rlist");
-    chans.forEach(c => {
-      const e = h("div", "ritem focusable", `${ava(c, 64)}<div class="ci"><div class="n">${esc(c.name)}</div><div class="s ${c.live ? "l" : ""}">${c.live ? "En direct" + (c.stream?.cat ? ", " + esc(c.stream.cat) : "") : "Hors ligne"}</div></div>`);
-      e.dataset.key = "r:" + c.login; e._enter = () => A.openChannel(c); l.appendChild(e);
-    });
-    r.appendChild(l);
-  }
-  if (cats.length) {
-    r.appendChild(h("h3", "", suggest ? "Catégories populaires" : "Catégories"));
-    const l = h("div", "rlist");
-    cats.forEach(c => {
-      const pic = c.art ? `<span class="ava sq" style="width:64px;height:85px;background-image:url(\x27${esc(c.art)}\x27)"></span>` : `<span class="ava sq" style="width:64px;height:85px;font-size:30px;background:${gradBg(hueOf(c.name), 1)}">${c.glyph || ""}</span>`;
-      const e = h("div", "ritem focusable", `${pic}<div class="ci"><div class="n">${esc(c.name)}</div></div>`);
-      e.dataset.key = "rc:" + c.id; e._enter = () => A.openCategory(c); l.appendChild(e);
-    });
-    r.appendChild(l);
-  }
+  if (!chans.length) { r.innerHTML = `<p class="empty">Aucune chaîne pour « ${esc(Q.trim())} ».</p>`; return; }
+  chans.forEach((c, i) => {
+    const s = c.stream || {};
+    const live = c.live;
+    const sub = live
+      ? `<span class="rd-game">${esc(s.cat || "Sans catégorie")}</span><span class="rd-sep">·</span><span class="rd-since">${s.startedAt ? "en live depuis " + durTxt((Date.now() - s.startedAt) / 1000) : "en direct"}</span>`
+      : "<span class=\"rd-off\">Hors ligne</span>";
+    const vw = live && s.viewers != null ? `<div class="rd-vw"><span class="dot sm"></span>${kf(s.viewers)}<small>spectateurs</small></div>` : "";
+    const e = h("div", "ritem focusable" + (live ? " is-live" : ""), `${ava(c, 72)}
+      <div class="rd-main"><div class="rd-name">${esc(c.name)}${live ? "<span class=\"rd-badge\">EN DIRECT</span>" : ""}</div><div class="rd-meta">${sub}</div></div>${vw}`);
+    e.dataset.key = "r:" + c.login;
+    e.style.setProperty("--d", (i * 0.03) + "s"); // petite cascade d’apparition
+    e._enter = () => A.openChannel(c);
+    r.appendChild(e);
+  });
 }
 
-/* ---------- réglages ---------- */
+/* ---------- réglages ---------- *//* ---------- réglages ---------- */
 export const SROWS = [
   ["adblock", "Blocage des pubs", "Les coupures pub sont détectées et ignorées : le live continue.", ["Activé", "Désactivé"]],
   ["quality", "Qualité par défaut", "Source : la meilleure qualité proposée par la chaîne, souvent 1080p60.", ["Source", "Auto"]],
@@ -345,9 +406,13 @@ export function renderSettings() {
     box.appendChild(e);
   }
   const extra = [
+    ["home", "Personnaliser l’accueil", "Choisissez les rangées affichées sur l’accueil et leur ordre.", "Ouvrir", () => A.show("homecfg")],
+    ["subs", "Rediffusions des abonnés", getUserToken() ? "Votre session est connectée : les rediffs réservées de vos chaînes abonnées sont accessibles." : "Connectez votre session pour lire les rediffs réservées des chaînes auxquelles vous êtes abonné.", getUserToken() ? "Gérer" : "Connecter", () => A.show("subs")],
     ["upd", "Mises à jour", `Version installée : ${esc(CONFIG.version)}. OK pour vérifier s’il y a plus récent.`, "Vérifier", () => A.checkUpdate(true)],
     ["bug", "Signaler un problème", "Affiche le journal de l’app et un QR code pour ouvrir un rapport sur GitHub.", "Ouvrir", () => A.showBugReport()],
-    ["acc", "Compte Twitch", `Connecté en tant que ${esc(me?.display_name || "?")}.${DEMO ? " (mode démo)" : ""}`, "Se déconnecter", () => A.logout()],
+    ["acc", "Changer de compte", `Connecté en tant que ${esc(me?.display_name || "?")}.${DEMO ? " (mode démo)" : ""}`, "Changer", () => A.switchProfile()],
+    ["add", "Ajouter un compte", "Connectez un autre compte Twitch. Vous choisirez lequel utiliser au lancement.", "Ajouter", () => A.addAccount()],
+    ["out", "Se déconnecter", "Retire ce compte de l’appareil.", "Se déconnecter", () => A.logout()],
   ];
   for (const [k, l, d, v, fn] of extra) {
     const e = h("div", "set-row focusable", `<div><div class="l">${l}</div><div class="d">${d}</div></div><div class="v">${v}</div>`);

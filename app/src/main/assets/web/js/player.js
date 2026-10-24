@@ -38,7 +38,7 @@ export function initPlayer() {
 export async function openPlayer(o) {
   stopPreview();
   P.ret = N.focused; P.open = true; P.ch = o.ch; P.mode = o.mode; P.vod = o.vod || null; P.clip = o.clip || null;
-  P.paused = false; P.t = 0; P.dur = 0; P.ads = 0; P.vt = 0;
+  P.paused = false; P.t = 0; P.dur = 0; P.ads = 0; P.vt = 0; P.reposing = false; P.muted = null; P.volMain = 1; P.volPip = 0;
   if (o.chat) P.chat = true;
   player.classList.add("open");
   applyChat(); buildUI(); showZap(); showUI(false);
@@ -95,7 +95,9 @@ async function startMain() {
     }
   } catch (e) {
     log("ERR", e);
-    if (my === P.seq) showMsg("error", e.message);
+    if (my !== P.seq) return;
+    if (e.message === "ABO_REQUIS") showMsg("error", "Cette rediffusion est réservée aux abonnés. Si vous êtes abonné à cette chaîne, connectez votre session dans Réglages > Rediffusions des abonnés.");
+    else showMsg("error", e.message);
   }
 }
 function stopMain() {
@@ -136,7 +138,7 @@ function attachHls(v, url, opt) {
     if (!opt.main) { if (d.fatal) { log("WARN", "2e live", d.details); stopPip(); applyPip(); buildUI(); } return; }
     const code = d.response && d.response.code;
     if (d.details === H.ErrorDetails.MANIFEST_LOAD_ERROR && code === 403) {
-      showMsg("error", P.mode === "vod" ? "Cette rediffusion est réservée aux abonnés de la chaîne." : "Ce live n’est pas accessible."); hls.destroy(); return;
+      showMsg("error", P.mode === "vod" ? "Cette rediffusion est réservée aux abonnés. Si vous êtes abonné, connectez votre session dans Réglages > Rediffusions des abonnés." : "Ce live n’est pas accessible."); hls.destroy(); return;
     }
     if (d.details === H.ErrorDetails.MANIFEST_LOAD_ERROR && code === 404) {
       showMsg("error", P.mode === "live" ? "Cette chaîne n’est plus en direct." : "Rediffusion introuvable."); hls.destroy(); return;
@@ -159,7 +161,7 @@ function attachHls(v, url, opt) {
 function buildQualities(hls) {
   const lv = hls.levels.map((l, i) => ({ i, h: l.height || 0, fr: Math.round(l.frameRate || 30) })).filter(l => l.h > 0)
     .sort((a, b) => b.h - a.h || b.fr - a.fr);
-  const name = l => `${l.h}p${l.fr > 30 ? l.fr : ""}`;
+  const name = l => { const q = l.h >= 2160 ? "4K" : l.h >= 1440 ? "2K" : l.h + "p"; return q + (l.fr > 30 ? (l.h >= 1440 ? " " : "") + l.fr : ""); };
   P.quals = lv.map((l, k) => ({ label: k === 0 ? name(l) + " source" : name(l), i: l.i }));
   P.quals.push({ label: "Auto", i: -1 });
   P.qi = settings.quality === 1 ? P.quals.length - 1 : 0;
@@ -190,13 +192,31 @@ function adStart(mode) {
 function adEnd() { setTimeout(() => el("adpill").classList.remove("show"), 1200); }
 
 /* ---------- 2e live (incrustation) ---------- */
-function applyPip() {
+function applyPip() { applyMultiplex(); }
+function applyMultiplex() {
   const on = !!P.pip;
+  const pl = el("player");
+  pl.classList.toggle("multiplex", on);
   el("pipwrap").classList.toggle("on", on);
-  el("pipwrap").classList.toggle("left", P.chat && settings.chatPos === 0);
   pipcv.style.display = DEMO ? "block" : "none";
   pipv.style.display = DEMO ? "none" : "block";
-  if (on) el("piplab").textContent = P.pip.name;
+  if (on) {
+    // En multiplex, les deux streams sont empilés : le principal (video) en haut ou en bas selon P.mpTop.
+    const chTop = P.mpTop !== "pip"; // true = chaîne principale en haut
+    pl.classList.toggle("mp-main-top", chTop);
+    el("piplab").textContent = P.pip.name;
+    el("mainlab").textContent = P.ch.name;
+  }
+  applyVolumes();
+}
+function applyVolumes() {
+  if (P.volMain == null) P.volMain = 1;
+  if (P.volPip == null) P.volPip = 0;
+  if (!DEMO) {
+    video.volume = P.muted === "main" ? 0 : P.volMain;
+    video.muted = P.muted === "main";
+    if (pipv) { pipv.volume = P.muted === "pip" ? 0 : P.volPip; pipv.muted = !P.pip || P.muted === "pip"; }
+  }
 }
 async function startPip() {
   if (DEMO || !P.pip) return;
@@ -213,16 +233,16 @@ function togglePip() {
   else {
     const c = A.lives().find(x => x.login !== P.ch.login);
     if (!c) { A.toast("<div><b>Aucun autre live</b><small>Aucune autre chaîne suivie n’est en direct.</small></div>", 3000); return; }
-    P.pip = c; startPip();
+    P.pip = c; P.mpTop = "ch"; P.volMain = 1; P.volPip = 0; P.muted = null; startPip();
   }
-  applyPip(); buildUI(); setFocus(el("pc-pip"), { scroll: false }); bump();
+  applyMultiplex(); buildUI(); setFocus(el("pc-pip"), { scroll: false }); bump();
 }
 function swapPip() {
   if (!P.pip) return;
   const a = P.ch, b = P.pip;
   stopPip(); P.ch = b; P.pip = a;
-  startMain(); startPip(); startChat(); applyPip(); buildUI(); showZap();
-  setFocus(el("pc-swap"), { scroll: false }); bump();
+  startMain(); startPip(); startChat(); applyMultiplex(); buildUI(); showZap();
+  bump();
 }
 
 /* ---------- chat ---------- */
@@ -250,7 +270,9 @@ function flushChat() {
 function applyChat() {
   const c = el("chat");
   c.classList.toggle("on", P.chat);
-  c.classList.toggle("left", settings.chatPos === 1);
+  if (settings.chatFree) { P.chatX = settings.chatX; P.chatY = settings.chatY; c.classList.add("free"); positionChatFree(); }
+  else { c.classList.remove("free"); c.style.left = ""; c.style.right = ""; c.style.top = ""; c.style.bottom = ""; }
+  c.classList.toggle("left", !settings.chatFree && settings.chatPos === 1);
   c.classList.toggle("st-t", settings.chatStyle === 0);
   c.classList.toggle("st-d", settings.chatStyle === 1);
   c.style.setProperty("--cfs", [22, 27, 32][settings.chatSize] + "px");
@@ -279,12 +301,11 @@ function buildUI() {
   const row = h("div", "pbtns");
   const mk = (id, html, fn) => { const e = h("div", "pbtn focusable", html); e.id = id; e._enter = fn; row.appendChild(e); return e; };
   mk("pc-play", "", togglePause);
-  mk("pc-chat", "", toggleChat);
+  mk("pc-chat", "", openChatMenu);
   mk("pc-cst", "", () => { settings.chatStyle ^= 1; saveSettings(); applyChat(); refreshBtns(); });
-  mk("pc-cpos", "", () => { settings.chatPos ^= 1; saveSettings(); applyChat(); refreshBtns(); });
-  if (P.mode === "live") { mk("pc-pip", "", togglePip); if (P.pip) mk("pc-swap", "Inverser les lives", swapPip); }
+  mk("pc-cpos", "", startChatReposition);
+  if (P.mode === "live") { mk("pc-pip", "", P.pip ? openMultiplexMenu : togglePip); }
   mk("pc-q", "", openQualityMenu);
-  mk("pc-fav", "", () => { const on = toggleFav(c.login); refreshBtns(); buildTop(); A.toast(`<div><b>${on ? "Ajouté aux favoris" : "Retiré des favoris"}</b><small>${esc(c.name)} ${on ? "passera en premier partout dans l’app." : "n’est plus en favori."}</small></div>`, 2500); });
   mk("pc-stats", "Statistiques", toggleStats);
   b.appendChild(row);
   refreshBtns(); updTime();
@@ -293,40 +314,95 @@ function buildTop() { const pn = $("#p-top .pn"); if (pn) pn.innerHTML = esc(P.c
 function refreshBtns() {
   const set = (id, html) => { const e = el(id); if (e) e.innerHTML = html; };
   set("pc-play", P.paused ? PLAY + "Lecture" : PAUSE + "Pause");
-  set("pc-chat", CHATI + (P.chat ? "Masquer le chat" : "Afficher le chat"));
+  set("pc-chat", CHATI + "Chat ▾");
   set("pc-cst", "Chat " + (settings.chatStyle ? "sombre" : "transparent"));
-  set("pc-cpos", "Chat " + (settings.chatPos ? "à gauche" : "à droite"));
-  set("pc-pip", P.pip ? "Retirer le 2e live" : "Ajouter un 2e live");
-  set("pc-q", (P.quals[P.qi]?.label || "Qualité") + " ▾");
-  set("pc-fav", favs.has(P.ch?.login) ? "★ Favori" : "☆ Favori");
+  set("pc-cpos", "Repositionner le chat");
+  set("pc-pip", "Multiplex de stream" + (P.pip ? " ▾" : ""));
+  set("pc-q", "Qualité ▾");
   el("pc-chat")?.classList.toggle("on", P.chat);
   el("pc-stats")?.classList.toggle("on", P.stats);
-  el("pc-fav")?.classList.toggle("on", favs.has(P.ch?.login));
 }
-/* ---------- liste des qualités ---------- */
+/* ---------- menus déroulants (qualité, chat, multiplex) ---------- */
 export const qualityMenuOpen = () => !el("qmenu").classList.contains("gone");
-function openQualityMenu() {
-  if (P.quals.length < 2) { A.toast("<div><b>Une seule qualité disponible</b><small>Cette vidéo n’est proposée qu’en une qualité.</small></div>", 2500); return; }
+function openMenu(anchorId, title, items) {
   const m = el("qmenu");
-  m.innerHTML = "<div class=\"qh\">Qualité</div>";
-  P.quals.forEach((q, i) => {
-    const it = h("div", "qitem focusable" + (i === P.qi ? " cur" : ""), `<span>${esc(q.label)}</span>${i === P.qi ? "<b>✓</b>" : ""}`);
-    it._enter = () => { P.qi = i; applyQuality(); closeQualityMenu(); refreshBtns(); };
-    m.appendChild(it);
+  m.innerHTML = `<div class="qh">${title}</div>`;
+  items.forEach(it => {
+    const row = h("div", "qitem focusable" + (it.cur ? " cur" : ""), `<span>${it.label}</span>${it.cur ? "<b>✓</b>" : it.right || ""}`);
+    row._enter = it.fn;
+    if (it.key) row._key = it.key;
+    m.appendChild(row);
   });
   m.classList.remove("gone");
-  const b = el("pc-q"), pr = player.getBoundingClientRect(), br = b.getBoundingClientRect();
+  const b = el(anchorId), pr = player.getBoundingClientRect(), br = b.getBoundingClientRect();
   m.style.left = (br.left - pr.left) / N.scale + "px";
   m.style.bottom = (pr.bottom - br.top) / N.scale + 16 + "px";
   setFocus($(".qitem.cur", m) || $(".qitem", m), { scroll: false });
   clearTimeout(P.uiT);
+  return m;
 }
+function openQualityMenu() {
+  if (P.quals.length < 2) { A.toast("<div><b>Une seule qualité disponible</b><small>Cette vidéo n’est proposée qu’en une qualité.</small></div>", 2500); return; }
+  openMenu("pc-q", "Qualité", P.quals.map((q, i) => ({ label: esc(q.label), cur: i === P.qi, fn: () => { P.qi = i; applyQuality(); closeQualityMenu(); refreshBtns(); } })));
+}
+function openChatMenu() {
+  openMenu("pc-chat", "Chat", [
+    { label: "Afficher le chat", cur: P.chat, fn: () => { P.chat = true; applyChat(); refreshBtns(); closeQualityMenu(); } },
+    { label: "Masquer le chat", cur: !P.chat, fn: () => { P.chat = false; applyChat(); refreshBtns(); closeQualityMenu(); } },
+  ]);
+}
+function openMultiplexMenu() {
+  // Disponible quand un 2e live est actif : ordre haut/bas, volumes, mute nommé.
+  const top = P.mpTop === "pip" ? P.pip : P.ch, bottom = P.mpTop === "pip" ? P.ch : P.pip;
+  openMenu("pc-pip", "Multiplex de stream", [
+    { label: `Mettre ${esc(P.ch.name)} en haut`, cur: P.mpTop !== "pip", fn: () => { P.mpTop = "ch"; applyMultiplex(); closeQualityMenu(); } },
+    { label: `Mettre ${esc(P.pip.name)} en haut`, cur: P.mpTop === "pip", fn: () => { P.mpTop = "pip"; applyMultiplex(); closeQualityMenu(); } },
+    { label: `Volume de ${esc(P.ch.name)} : ${Math.round(P.volMain * 100)} %`, right: "<b>◀ ▶</b>", key: d => { if (d === "left" || d === "right") { P.volMain = clamp01(P.volMain + (d === "right" ? .1 : -.1)); applyVolumes(); openMultiplexMenu(); return true; } return false; }, fn: () => {} },
+    { label: `Volume de ${esc(P.pip.name)} : ${Math.round(P.volPip * 100)} %`, right: "<b>◀ ▶</b>", key: d => { if (d === "left" || d === "right") { P.volPip = clamp01(P.volPip + (d === "right" ? .1 : -.1)); applyVolumes(); openMultiplexMenu(); return true; } return false; }, fn: () => {} },
+    { label: P.muted === "main" ? `Réactiver ${esc(P.ch.name)}` : `Mute le stream de ${esc(P.ch.name)}`, fn: () => { P.muted = P.muted === "main" ? null : "main"; applyVolumes(); closeQualityMenu(); } },
+    { label: P.muted === "pip" ? `Réactiver ${esc(P.pip.name)}` : `Mute le stream de ${esc(P.pip.name)}`, fn: () => { P.muted = P.muted === "pip" ? null : "pip"; applyVolumes(); closeQualityMenu(); } },
+    { label: "Quitter le multiplex", fn: () => { closeQualityMenu(); togglePip(); } },
+  ]);
+}
+const clamp01 = v => Math.max(0, Math.min(1, Math.round(v * 10) / 10));
 function closeQualityMenu(refocus = true) {
   const m = el("qmenu");
   if (m.classList.contains("gone")) return;
   m.classList.add("gone");
-  if (refocus) setFocus(el("pc-q"), { scroll: false });
+  if (refocus) setFocus(el(N.focused && N.focused.id ? N.focused.id : "pc-q"), { scroll: false });
   bump();
+}
+
+/* ---------- repositionnement libre du chat ---------- */
+function startChatReposition() {
+  if (!P.chat) { P.chat = true; applyChat(); refreshBtns(); }
+  P.reposing = true;
+  showUI(false);
+  el("chat").classList.add("reposing");
+  el("repohint").classList.add("on");
+  positionChatFree();
+}
+function stopChatReposition(save) {
+  P.reposing = false;
+  el("chat").classList.remove("reposing");
+  el("repohint").classList.remove("on");
+  if (save) { settings.chatX = P.chatX; settings.chatY = P.chatY; settings.chatFree = 1; saveSettings(); }
+  showUI(true, el("pc-cpos"));
+}
+function moveChat(dir) {
+  const step = 4;
+  if (dir === "left") P.chatX = Math.max(0, (P.chatX ?? 62) - step);
+  else if (dir === "right") P.chatX = Math.min(72, (P.chatX ?? 62) + step);
+  else if (dir === "up") P.chatY = Math.max(0, (P.chatY ?? 0) - step);
+  else if (dir === "down") P.chatY = Math.min(55, (P.chatY ?? 0) + step);
+  positionChatFree();
+}
+function positionChatFree() {
+  const c = el("chat");
+  c.style.left = (P.chatX ?? 62) + "%";
+  c.style.right = "auto";
+  c.style.top = (P.chatY ?? 0) + "%";
+  c.style.bottom = "auto";
 }
 
 function showUI(on, focusEl) {
@@ -436,6 +512,12 @@ function loop(now) {
 
 /* ---------- touches ---------- */
 export function playerKey(a) {
+  if (P.reposing) {
+    if (a === "ok") return stopChatReposition(true);
+    if (a === "back") return stopChatReposition(false);
+    if (["up", "down", "left", "right"].includes(a)) return moveChat(a);
+    return;
+  }
   if (a === "chat" || a === "menu") return toggleChat();
   if (a === "stats") return toggleStats();
   if (a === "suspend") { if (!P.paused) togglePause(); return; }
@@ -444,6 +526,8 @@ export function playerKey(a) {
   if (qualityMenuOpen()) {
     if (a === "back") return closeQualityMenu();
     if (a === "ok") return activate(N.focused);
+    const f = N.focused;
+    if ((a === "left" || a === "right") && f && f._key && f._key(a)) return;
     if (a === "up" || a === "down") move(a);
     return;
   }

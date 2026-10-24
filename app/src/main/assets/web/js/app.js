@@ -12,17 +12,17 @@ import { stopPreview } from "./preview.js";
 import { bindPlayer, initPlayer, openPlayer, isOpen, playerKey, playerClick, seekClick, onSettingChanged } from "./player.js";
 
 const P = DEMO ? createMock() : twitch;
-const D = { followed: [], vods: [], clips: [], sched: [], cats: [], catRow: null, loadingExtra: true };
+const D = { followed: [], vods: [], clips: [], sched: [], cats: [], catRow: null, topFr: [], loadingExtra: true };
 const S = { view: "home", stack: [], mem: {}, cat: null, homeDirty: true };
-const VIEWS = { home: "#v-home", today: "#v-today", following: "#v-following", cats: "#v-cats", cat: "#v-cat", search: "#v-search", settings: "#v-settings" };
-const RENDER = { home: UI.renderHome, today: UI.renderToday, following: UI.renderFollowing, cats: UI.renderCats, cat: () => UI.renderCat(S.cat), search: UI.renderSearch, settings: UI.renderSettings };
+const VIEWS = { home: "#v-home", today: "#v-today", following: "#v-following", cats: "#v-cats", cat: "#v-cat", search: "#v-search", settings: "#v-settings", homecfg: "#v-homecfg", subs: "#v-subs", prof: "#v-prof" };
+const RENDER = { home: UI.renderHome, today: UI.renderToday, following: UI.renderFollowing, cats: UI.renderCats, cat: () => UI.renderCat(S.cat), search: UI.renderSearch, settings: UI.renderSettings, homecfg: UI.renderHomeCfg, subs: UI.renderSubs, prof: () => UI.renderProfile(S.prof) };
 
 /* ---------- objet partagé avec ui.js et player.js ---------- */
 const A = {
   P, D, S, heroHue: 270,
   lives: () => D.followed.filter(c => c.live && c.stream).sort((a, b) => (favs.has(b.login) - favs.has(a.login)) || (b.stream.viewers - a.stream.viewers)),
   show, toast, openPlayer: o => { closeModal(); return openPlayer(o); }, openChannel, openCategory, focusFirstIn,
-  checkUpdate, showBugReport, logout, startLogin,
+  checkUpdate, showBugReport, logout, startLogin, checkUserToken, promptText, focusKey, openProfile, channelChoice, switchProfile, addAccount,
   onSetting: k => { onSettingChanged(); if (k === "lang") S.homeDirty = true; },
   onPlayerClosed(ret, mode) {
     if (mode === "vod") S.homeDirty = true;
@@ -54,8 +54,10 @@ function cands() {
   if (isOpen()) return $("#player").classList.contains("ui") ? $$("#p-bottom .focusable") : [];
   return [...$$("#side .focusable"), ...$$(".view.active .focusable")].filter(e => e.offsetParent !== null);
 }
+const defaultCands = cands;
 N.cands = cands;
 
+function focusKey(key) { const v = $(VIEWS[S.view]); const el = v && v.querySelector(`[data-key="${key}"]`); if (el) setFocus(el, { scroll: false }); }
 function focusFirstIn(sel) { const v = $(sel); if (v) restoreFocus(v, null, 0); }
 function show(name, { fromSide = false, back = false } = {}) {
   const old = S.view;
@@ -105,7 +107,17 @@ async function openChannel(c) {
   if (v) return A.openPlayer({ ch: c, mode: "vod", vod: v });
   toast(`${ava(c, 64, false)}<div><b>${esc(c.name)} n’a pas de rediffusion disponible</b><small>Activez les alertes de live pour être prévenu au prochain direct.</small></div>`);
 }
-function openCategory(cat) { S.cat = cat; show("cat"); }
+function openCategory(cat) { S.cat = cat; S.catNew = true; show("cat"); }
+function openProfile(ch) { S.prof = ch; show("prof"); }
+// Bulle de choix quand on ouvre une chaîne en live depuis Suivis.
+function channelChoice(ch, anchorEl) {
+  const html = `<div class="cc-title">${UI.ava ? "" : ""}${esc(ch.name)} est en direct</div>
+    <div class="cc-sub">${esc(ch.stream?.title || "")}</div>`;
+  popover(anchorEl, [
+    ["Regarder le live", true, () => { closePopover(); openPlayer({ ch, mode: "live" }); }],
+    ["Accéder au profil", false, () => { closePopover(); openProfile(ch); }],
+  ], html);
+}
 
 /* ---------- notifications ---------- */
 let tT;
@@ -128,10 +140,29 @@ function modal(html, buttons, onBack) {
   m.classList.remove("gone");
   setFocus($(".focusable", m), { scroll: false });
 }
+let popRet = null;
+function popover(anchorEl, buttons, html) {
+  const m = $("#modal");
+  popRet = N.focused;
+  const ar = anchorEl ? anchorEl.getBoundingClientRect() : null, st = $("#stage").getBoundingClientRect(), s = N.scale;
+  const pos = ar ? `style="position:absolute;left:${(ar.left - st.left) / s}px;top:${(ar.bottom - st.top) / s + 14}px"` : "";
+  m.innerHTML = `<div class="popover" ${pos}>${html || ""}<div class="pop-btns"></div></div>`;
+  m.classList.add("as-pop");
+  const b = $(".pop-btns", m);
+  buttons.forEach(([label, primary, fn], i) => { const e = h("div", "pop-item focusable" + (primary ? " primary" : ""), esc(label)); e._enter = fn; e.dataset.key = "pop" + i; b.appendChild(e); });
+  m.classList.remove("gone");
+  modalOnBack = closePopover;
+  setFocus($(".focusable", m), { scroll: false });
+}
+function closePopover() {
+  const m = $("#modal");
+  m.classList.add("gone"); m.classList.remove("as-pop"); m.innerHTML = ""; modalOnBack = null;
+  if (popRet && popRet.isConnected) setFocus(popRet, { scroll: false }); else if (!isOpen()) focusFirstIn(VIEWS[S.view]);
+}
 function closeModal() {
   const m = $("#modal");
   if (m.classList.contains("gone")) return;
-  m.classList.add("gone"); m.innerHTML = "";
+  m.classList.add("gone"); m.innerHTML = ""; promptState = null;
   if (modalRet && modalRet.isConnected) setFocus(modalRet, { scroll: false }); else if (!isOpen()) focusFirstIn(VIEWS[S.view]);
 }
 
@@ -169,6 +200,95 @@ function showBugReport() {
   if (url) UI.qrInto($("#bugqr"), url);
 }
 
+/* ---------- session abonnés : vérification du jeton saisi ---------- */
+async function checkUserToken(tok) {
+  try {
+    const r = await json("POST", "https://gql.twitch.tv/gql", {
+      headers: { "Client-ID": "kimne78kx3ncx6brgo4mv6wki5h1ko", "Authorization": "OAuth " + tok, "Content-Type": "text/plain;charset=UTF-8" },
+      body: JSON.stringify({ query: "{ currentUser { login } }" }),
+    });
+    return !!(r.data && r.data.data && r.data.data.currentUser && r.data.data.currentUser.login);
+  } catch (e) { log("WARN", "vérif session", e.message); return false; }
+}
+
+/* ---------- saisie de texte (clavier à l’écran ou clavier USB) ---------- */
+let promptState = null;
+function promptText(title, initial, onDone) {
+  promptState = { value: initial || "", onDone };
+  const row = "azertyuiop|qsdfghjklm|wxcvbn0123456789";
+  const keys = row.split("|").map(line => [...line].map(c => `<span class="pk focusable" data-k="${c}" data-key="pk:${c}">${c}</span>`).join("")).join("</div><div class=\"pkrow\">");
+  modalRaw(`<h2>${esc(title)}</h2>
+    <div class="pfield" id="pfield"></div>
+    <div class="pkb"><div class="pkrow">${keys}</div>
+      <div class="pkrow"><span class="pk wide focusable" data-k=" " data-key="pk:space">Espace</span><span class="pk wide focusable" data-k="back" data-key="pk:back">Effacer</span><span class="pk wide focusable" data-k="paste" data-key="pk:paste">Coller</span></div></div>
+    <p class="mtxt">Astuce : un clavier USB ou l’appli télécommande Fire TV permet de coller directement.</p>`,
+    [["Valider", true, () => { const v = promptState.value; closeModal(); onDone(v); }], ["Annuler", false, closeModal]]);
+  drawPField();
+  $$("#modal .pk").forEach(k => { k._enter = () => pressPKey(k.dataset.k); });
+}
+function drawPField() { const f = $("#pfield"); if (f) f.innerHTML = promptState.value ? esc(promptState.value) + "<span class=\"pcur\"></span>" : "<span class=\"pph\">Saisissez ou collez le texte</span><span class=\"pcur\"></span>"; }
+async function pressPKey(k) {
+  if (k === "back") promptState.value = promptState.value.slice(0, -1);
+  else if (k === "paste") { try { const t = await navigator.clipboard.readText(); if (t) promptState.value += t.trim(); } catch { A.toast("<div><b>Collage indisponible</b><small>Tapez la clé avec le clavier, ou branchez un clavier USB.</small></div>", 3500); } }
+  else promptState.value += k;
+  drawPField();
+}
+function modalRaw(html, buttons) { modal(html, buttons); }
+
+/* ---------- profils multi-comptes (écran de lancement type Netflix) ---------- */
+function connectSound() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    const ac = new Ctx();
+    const now = ac.currentTime;
+    [660, 880, 1320].forEach((f, i) => {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = "sine"; o.frequency.value = f;
+      o.connect(g); g.connect(ac.destination);
+      const t = now + i * 0.06;
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.18, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+      o.start(t); o.stop(t + 0.3);
+    });
+    setTimeout(() => ac.close(), 600);
+  } catch { /* son non dispo */ }
+}
+function chooseProfile() {
+  return new Promise(async resolve => {
+    const profiles = P.demo ? (P.isLogged() ? [P.getMe && P.getMe() ? { id: "demo", login: "toi", name: (P.getMe() || {}).display_name || "TOI", avatar: "" } : null].filter(Boolean) : []) : P.listProfiles();
+    if (!profiles.length) { await startLogin(); resolve(); return; }
+    renderProfilePicker(profiles, resolve);
+  });
+}
+function renderProfilePicker(profiles, done) {
+  const L = $("#login");
+  L.className = "picker";
+  const cards = profiles.map(p => `<div class="pf-card focusable" data-id="${esc(p.id)}" data-key="pf:${esc(p.id)}">
+      ${ava({ name: p.name, login: p.login, avatar: p.avatar }, 190, false)}<div class="pf-name">${esc(p.name)}</div></div>`).join("");
+  L.innerHTML = `<div class="pf-wrap"><div class="logo">${$(".topbar .logo").innerHTML}</div>
+    <h1 class="pf-title">Qui regarde ?</h1>
+    <div class="pf-grid">${cards}<div class="pf-card add focusable" data-key="pf:add"><div class="pf-plus">+</div><div class="pf-name">Ajouter un compte</div></div></div></div>`;
+  N.cands = () => [...L.querySelectorAll(".focusable")];
+  const pick = (id) => {
+    connectSound();
+    P.setActiveProfile(id);
+    L.classList.add("launch");
+    setTimeout(() => { L.classList.add("gone"); L.className = "gone"; done(); }, 650);
+  };
+  L.querySelectorAll(".pf-card[data-id]").forEach(el => {
+    el._enter = () => pick(el.dataset.id);
+  });
+  const add = L.querySelector(".pf-card.add");
+  add._enter = async () => { N.cands = defaultCands; await startLogin(); done(); };
+  setFocus(L.querySelector(".focusable"), { scroll: false });
+}
+
+function switchProfile() { location.reload(); }  // relance l’app -> écran "Qui regarde ?"
+async function addAccount() {
+  N.cands = defaultCands;
+  $("#login").className = ""; 
+  await startLogin();
+  location.reload();
+}
 /* ---------- connexion ---------- */
 let loginDone = null, loginRun = 0;
 function startLogin() {
@@ -223,6 +343,9 @@ async function loadAll() {
 async function loadExtra() {
   D.loadingExtra = true;
   try {
+    if (!A.lives().length) { D.topFr = await P.getTopFrenchStreams(10); softRefresh(); }
+  } catch (e) { log("WARN", "lives FR", e.message); }
+  try {
     D.vods = await P.getRecentVods(D.followed, Date.now() - 24 * 3600e3);
     D.loadingExtra = false;
     softRefresh();
@@ -256,7 +379,8 @@ async function refreshLives() {
       if (settings.alerts === 1 && !favs.has(c.login) && !reminded) continue;
       toast(`${ava(c, 72, false)}<div><b>${esc(c.name)} vient de lancer un live</b><small>${esc(c.stream.cat || "")}, ${esc(c.stream.title || "")}</small></div>`, 6000);
     }
-    if (started.length) softRefresh();
+    if (!A.lives().length && !D.topFr.length) { try { D.topFr = await P.getTopFrenchStreams(10); } catch (e) { log("WARN", e.message); } }
+    if (started.length || !A.lives().length) softRefresh();
   } catch (e) { log("WARN", "actualisation", e.message); }
 }
 
@@ -290,6 +414,11 @@ function onAction(a) {
 window.TU = { onKey: a => onAction(a) !== false };
 
 addEventListener("keydown", e => {
+  if (promptState && !$("#modal").classList.contains("gone")) {
+    if (e.key === "Enter" || e.key === "Escape" || e.key.startsWith("Arrow")) { /* géré par la navigation */ }
+    else if (e.key === "Backspace") { e.preventDefault(); promptState.value = promptState.value.slice(0, -1); drawPField(); return; }
+    else if (e.key.length === 1) { e.preventDefault(); promptState.value += e.key; drawPField(); return; }
+  }
   if (S.view === "search" && !isOpen() && $("#modal").classList.contains("gone") && !e.ctrlKey && !e.metaKey && !e.altKey) {
     if (/^[a-z0-9]$/i.test(e.key)) { e.preventDefault(); UI.typeQ(e.key.toLowerCase()); return; }
     if (e.key === "Backspace" && UI.backQ()) { e.preventDefault(); return; }
@@ -330,7 +459,9 @@ async function boot() {
   setInterval(() => { $("#clock").textContent = hm(Date.now()); }, 15000);
   $("#clock").textContent = hm(Date.now());
   log("INFO", `démarrage ${CONFIG.version} ${DEMO ? "(démo)" : ""}`);
-  if (!P.isLogged()) { $("#boot").classList.add("gone"); await startLogin(); $("#boot").classList.remove("gone"); }
+  $("#boot").classList.add("gone");
+  await chooseProfile();
+  $("#boot").classList.remove("gone");
   const me = P.getMe();
   if (me) $("#me").outerHTML = ava({ name: me.display_name, login: me.login, avatar: me.profile_image_url }, 56, false).replace("class=\"ava\"", "class=\"ava\" id=\"me\"");
   if (!(await loadAll())) return;

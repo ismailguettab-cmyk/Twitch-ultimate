@@ -8,8 +8,26 @@ import { gql } from "./playback.js";
 
 const HELIX = "https://api.twitch.tv/helix";
 const SCOPES = "user:read:follows";
-let auth = store.get("auth", null);   // { access, refresh, exp }
-let me = store.get("me", null);
+// Multi-comptes : chaque profil a ses propres jetons, rangés sous "prof:<id>:*".
+export function listProfiles() { return store.get("profiles", []); }
+export function activeProfileId() { return store.get("activeProfile", null); }
+export function setActiveProfile(id) { store.set("activeProfile", id); auth = store.get(K("auth"), null); me = store.get(K("me"), null); cache.clear(); }
+function K(name) { const id = store.get("activeProfile", "_"); return "prof:" + id + ":" + name; }
+function upsertProfile(u) {
+  const list = store.get("profiles", []);
+  const p = { id: u.id, login: u.login, name: u.display_name || u.login, avatar: u.profile_image_url || "" };
+  const i = list.findIndex(x => x.id === u.id);
+  if (i >= 0) list[i] = p; else list.push(p);
+  store.set("profiles", list);
+  store.set("activeProfile", u.id);
+}
+export function removeProfile(id) {
+  store.set("profiles", store.get("profiles", []).filter(p => p.id !== id));
+  store.del("prof:" + id + ":auth"); store.del("prof:" + id + ":me"); store.del("prof:" + id + ":userToken");
+  if (store.get("activeProfile", null) === id) store.del("activeProfile");
+}
+let auth = store.get(K("auth"), null);   // { access, refresh, exp } du profil actif
+let me = store.get(K("me"), null);
 
 const form = o => Object.entries(o).map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v)).join("&");
 const FORM = { "Content-Type": "application/x-www-form-urlencoded" };
@@ -35,8 +53,8 @@ export async function pollDeviceAuth(dev, cancelled) {
   throw new Error("Le code a expiré");
 }
 const oauth = params => json("POST", "https://id.twitch.tv/oauth2/token", { headers: FORM, body: form({ client_id: CONFIG.clientId, ...params }) });
-function saveAuth(d) { auth = { access: d.access_token, refresh: d.refresh_token, exp: Date.now() + (d.expires_in || 3600) * 1000 }; store.set("auth", auth); }
-export function logout() { auth = null; me = null; store.del("auth"); store.del("me"); cache.clear(); }
+function saveAuth(d) { auth = { access: d.access_token, refresh: d.refresh_token, exp: Date.now() + (d.expires_in || 3600) * 1000 }; store.set(K("auth"), auth); }
+export function logout() { const id = store.get("activeProfile", null); if (id) removeProfile(id); auth = null; me = null; cache.clear(); }
 export const isLogged = () => !!(auth && me);
 export const getMe = () => me;
 
@@ -67,7 +85,7 @@ export async function helix(path, params = {}, { soft404 = false } = {}) {
   }
   throw new Error("Twitch ne répond pas sur " + path);
 }
-async function loadMe() { const d = await helix("/users"); me = d.data[0]; store.set("me", me); }
+async function loadMe() { const d = await helix("/users"); me = d.data[0]; store.set(K("me"), me); upsertProfile(me); store.set(K("me"), me); }
 async function paged(path, params, max) {
   let out = [], cursor;
   do {
@@ -202,6 +220,39 @@ export async function getCategoryStreams(cat, lang) {
   const d = await helix("/streams", { game_id: cat.id, first: 40, language: lang || undefined });
   await fetchUsers(d.data.map(s => s.user_id));
   return d.data.map(s => chFrom(users.get(s.user_id) || { id: s.user_id, login: s.user_login, display_name: s.user_name }, s));
+}
+export async function getTopFrenchStreams(n = 10) {
+  return cached("topfr", 3 * 60000, async () => {
+    const d = await helix("/streams", { language: "fr", first: 60, type: "live" });
+    await fetchUsers(d.data.map(s => s.user_id));
+    const list = d.data.map(s => chFrom(users.get(s.user_id) || { id: s.user_id, login: s.user_login, display_name: s.user_name }, s));
+    // "buzz" : on mélange, puis on garde les n plus suivis en spectateurs — évite d'avoir toujours les mêmes géants.
+    for (let i = list.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [list[i], list[j]] = [list[j], list[i]]; }
+    return list.sort((a, b) => (b.stream.viewers) - (a.stream.viewers)).slice(0, n);
+  });
+}
+export async function getChannelProfile(ch) {
+  const [u, fol] = await Promise.all([
+    helix("/users", { id: ch.id }),
+    helix("/channels/followers", { broadcaster_id: ch.id }).catch(() => null),
+  ]);
+  const info = u.data[0] || {};
+  return {
+    id: ch.id, login: info.login || ch.login, name: info.display_name || ch.name,
+    avatar: info.profile_image_url || ch.avatar, bio: info.description || "",
+    createdAt: info.created_at ? Date.parse(info.created_at) : null,
+    followers: fol && fol.total != null ? fol.total : null,
+    live: ch.live, stream: ch.stream,
+  };
+}
+export async function getChannelVods(ch, max = 40) {
+  const out = []; let cursor;
+  do {
+    const d = await helix("/videos", { user_id: ch.id, type: "archive", first: 100, after: cursor });
+    out.push(...d.data.map(v => vodFrom(v, ch)));
+    cursor = d.pagination?.cursor;
+  } while (cursor && out.length < max);
+  return out;
 }
 export async function getStream(ch) {
   const d = await helix("/streams", { user_id: ch.id });

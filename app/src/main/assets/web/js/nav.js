@@ -47,7 +47,21 @@ export function move(dir) {
   const sd = side(), inSide = sd.contains(cur), vertical = dir === "up" || dir === "down";
   if (inSide && vertical) list = list.filter(e => sd.contains(e));
   if (!inSide && vertical) list = list.filter(e => !sd.contains(e));
+  // Clavier de recherche : haut/bas ne sortent jamais vers les résultats de droite.
+  if (cur.dataset && cur.dataset.kb && vertical) list = list.filter(e => e.dataset && e.dataset.kb);
   if (inSide && dir === "left") return;
+  // Rangée horizontale (carrousel) : gauche/droite suit les voisins DOM, même hors écran.
+  // Évite que "gauche" trop rapide ouvre le menu ou saute des lignes.
+  if (!inSide && !vertical && cur.parentElement && cur.parentElement.classList.contains("track")) {
+    let sib = dir === "left" ? cur.previousElementSibling : cur.nextElementSibling;
+    while (sib && !sib.classList.contains("focusable")) sib = dir === "left" ? sib.previousElementSibling : sib.nextElementSibling;
+    if (sib) { setFocus(sib); return; }
+    if (dir === "right") return;       // fin de rangée à droite : on ne bouge pas
+    // gauche en début de rangée : on laissera la géométrie choisir le menu ci-dessous
+  }
+  // Protection anti-saut : pour gauche/droite, ne jamais viser un élément qui n’est pas
+  // à peu près sur la même ligne que l’élément courant (sinon on "saute" plusieurs lignes).
+  const lockRow = !inSide && !vertical;
   const r = cur.getBoundingClientRect(), cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
   let best = null, bs = Infinity;
   const vc = [];
@@ -61,6 +75,7 @@ export function move(dir) {
     else { p = cy - qy; s = Math.abs(qx - cx); }
     if (p <= 2) continue;
     if (vertical) { vc.push([e, p, s]); continue; }
+    if (lockRow && !sd.contains(e) && s > r.height * 0.9) continue; // reste sur la même ligne
     const sc = p + s * 2.6;
     if (sc < bs) { bs = sc; best = e; }
   }
@@ -69,7 +84,13 @@ export function move(dir) {
     const pm = Math.min(...vc.map(v => v[1]));
     for (const [e, p, s] of vc) if (p <= pm + 40 * N.scale && s < bs) { bs = s; best = e; }
   }
-  if (best && !inSide && sd.contains(best)) best = sd.querySelector(".nav.active") || best;
+  if (best && !inSide && sd.contains(best)) {
+    // On n’ouvre le menu (bord gauche) que si rien d’autre n’est à gauche sur la même ligne.
+    const contentLeft = cur.closest(".view") ? cur.closest(".view").getBoundingClientRect().left : 0;
+    if (dir === "left" && r.left - contentLeft > r.width * 0.6) best = sd.querySelector(".nav.active") || best;
+    else if (dir === "left") best = null; // encore de la place à gauche : on ne saute pas au menu
+    else best = sd.querySelector(".nav.active") || best;
+  }
   if (best) setFocus(best);
 }
 
