@@ -496,7 +496,7 @@ function showMsg(kind, text) {
 function hideMsg() { el("pmsg").classList.remove("on"); el("pmsg").dataset.kind = ""; }
 
 /* ---------- statistiques et boucle d’animation ---------- */
-let lastFrames = 0, lastT = 0, demoFrames = 0;
+let lastFrames = 0, lastT = 0, lastLost = 0, demoFrames = 0;
 function updateStats() {
   if (!P.open) return;
   if (player.classList.contains("ui")) updTime();
@@ -511,11 +511,14 @@ function updateStats() {
     const q = video.getVideoPlaybackQuality ? video.getVideoPlaybackQuality() : null;
     const frames = q ? q.totalVideoFrames : 0;
     const fps = lastT ? Math.round((frames - lastFrames) * 1000 / (now - lastT)) : 0;
-    lastFrames = frames; lastT = now;
+    const lost = q ? q.droppedVideoFrames : 0;
+    // Le compteur de Chrome est cumulé depuis le début : on affiche surtout la part perdue sur la dernière seconde.
+    const lostNow = frames > lastFrames ? Math.round(Math.max(0, lost - lastLost) * 100 / (frames - lastFrames)) : 0;
+    lastFrames = frames; lastT = now; lastLost = lost;
     const lv = P.hls && P.hls.levels[P.hls.currentLevel >= 0 ? P.hls.currentLevel : P.hls.loadLevel];
     const buf = video.buffered.length ? video.buffered.end(video.buffered.length - 1) - video.currentTime : 0;
     rows.push(["Résolution", `${video.videoWidth} × ${video.videoHeight}`], ["Images/s (mesuré)", Math.max(0, fps)],
-      ["Images perdues", q ? q.droppedVideoFrames : "?"], ["Débit", lv ? (lv.bitrate / 1e6).toFixed(1).replace(".", ",") + " Mb/s" : "?"],
+      ["Images perdues", q ? `${lostNow} % (total ${lost})` : "?"], ["Débit", lv ? (lv.bitrate / 1e6).toFixed(1).replace(".", ",") + " Mb/s" : "?"],
       ["Codec", lv?.videoCodec || "?"], ["Tampon", buf.toFixed(1).replace(".", ",") + " s"]);
     if (P.mode === "live" && P.hls) rows.push(["Latence", (P.hls.latency || 0).toFixed(1).replace(".", ",") + " s"]);
   }

@@ -3,10 +3,11 @@
 Notez ici ce qui change à chaque release, puis copiez-le dans la description de la release GitHub :
 l’app affiche ce texte dans la fenêtre de mise à jour.
 
-## 1.5.1
+## 1.1.1
 Comptes
 - Les comptes restent tous connectés : ajouter un compte ne déconnecte plus l’autre.
 - Les comptes non utilisés sont maintenus connectés en arrière-plan.
+- Les sessions sont enregistrées par Android : un plantage de l’app ne déconnecte plus.
 - Une panne passagère de Twitch ne déconnecte plus. Si une session expire vraiment, le compte reste dans « Qui regarde ? » et il suffit de le revalider.
 
 Navigation
@@ -18,6 +19,9 @@ Fluidité et mémoire
 - Tampon vidéo mieux réglé : moins de saccades en live et moins de mémoire utilisée.
 - Si l’appareil perd des images, la qualité baisse automatiquement d’un cran (vous êtes prévenu).
 - L’aperçu dans les vignettes consomme beaucoup moins de mémoire et démarre un peu plus tard.
+- Miniatures de l’accueil plus légères.
+- Si l’affichage plante faute de mémoire, l’app se relance d’elle-même au lieu de se fermer.
+- Statistiques : les images perdues sont affichées en pourcentage sur la dernière seconde.
 
 ## 1.5.0
 Profils et lancement

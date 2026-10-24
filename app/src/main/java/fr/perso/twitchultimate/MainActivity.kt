@@ -5,12 +5,15 @@ import android.app.Activity
 import android.graphics.Color
 import android.os.Bundle
 import android.view.KeyEvent
+import android.view.ViewGroup
 import android.view.WindowManager
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
+import androidx.annotation.RequiresApi
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewClientCompat
 
@@ -22,6 +25,7 @@ import androidx.webkit.WebViewClientCompat
 class MainActivity : Activity() {
 
     private lateinit var web: WebView
+    private var destroyed = false
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,6 +66,17 @@ class MainActivity : Activity() {
                 // On ne quitte jamais l’app vers un autre site.
                 return request.url.host != "appassets.androidplatform.net"
             }
+
+            // Moteur web tué (mémoire saturée) : on relance l’écran au lieu de laisser Android fermer l’app.
+            @RequiresApi(26)
+            override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                if (view !== web || destroyed) return true
+                destroyed = true
+                (web.parent as? ViewGroup)?.removeView(web)
+                web.destroy()
+                recreate()
+                return true
+            }
         }
         web.webChromeClient = WebChromeClient()
         web.addJavascriptInterface(NativeBridge(this, web), "Android")
@@ -97,7 +112,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
-        web.destroy()
+        if (!destroyed) { destroyed = true; web.destroy() }
         super.onDestroy()
     }
 }

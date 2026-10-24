@@ -1,5 +1,6 @@
 package fr.perso.twitchultimate
 
+import android.content.Context
 import android.os.Build
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
@@ -13,6 +14,18 @@ import java.util.concurrent.Executors
 class NativeBridge(private val activity: MainActivity, private val web: WebView) {
 
     private val pool = Executors.newFixedThreadPool(8)
+    private val prefs = activity.getSharedPreferences("tu", Context.MODE_PRIVATE)
+
+    /** Sessions des comptes : écrites sur le disque immédiatement (commit), contrairement au stockage du WebView
+     *  qui peut perdre les dernières écritures si l’app plante. Twitch n’accepte chaque jeton de rafraîchissement
+     *  qu’une fois : en perdre un, c’est être déconnecté. */
+    @JavascriptInterface
+    fun prefGet(key: String): String? = prefs.getString(key, null)
+
+    @JavascriptInterface
+    fun prefSet(key: String, value: String?) {
+        prefs.edit().apply { if (value == null) remove(key) else putString(key, value) }.commit()
+    }
 
     @JavascriptInterface
     fun config(): String = JSONObject().apply {

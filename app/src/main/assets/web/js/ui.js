@@ -149,7 +149,8 @@ function btn(label, cls, fn, key, icon = "") {
 function bigLiveCard(c, suggested = false) {
   const s = c.stream || {};
   const since = s.startedAt ? durTxt((Date.now() - s.startedAt) / 1000) : "";
-  const e = h("div", "lcard focusable", `<div class="thumb" style="${thumbStyle(s.thumbBig || s.thumb, c.login)}">
+  // Miniature 640 × 360 : la carte fait ~550 px de large, la version 1280 × 720 quadruplait la mémoire pour rien.
+  const e = h("div", "lcard focusable", `<div class="thumb" style="${thumbStyle(s.thumb || s.thumbBig, c.login)}">
       <span class="b-live">En direct</span>${vodBadge(c)}${s.viewers != null ? `<span class="t-meta"><span class="dot sm"></span>${kf(s.viewers)}</span>` : ""}${since ? `<span class="b-since">${since}</span>` : ""}</div>
     <div class="card-info">${ava(c, 64, false)}<div class="ci"><div class="c-name">${esc(c.name)}${favs.has(c.login) ? " <span class=\"star\">★</span>" : ""}</div>
       <div class="c-title">${esc(s.title || "")}</div><div class="c-sub">${esc(s.cat || "")}${suggested && s.viewers != null ? " · " + kf(s.viewers) + " spectateurs" : ""}</div></div></div>`);

@@ -1,9 +1,27 @@
 // Tout ce qui est mémorisé sur le Fire Stick : réglages, session, favoris, progression des rediffs.
 const P = "tu.";
+// Comptes et sessions : gardés par Android (écriture immédiate), pour survivre à un plantage de l’app.
+const isAccountKey = k => k === "profiles" || k === "activeProfile" || k.startsWith("prof:");
+const nat = k => isAccountKey(k) && window.Android && window.Android.prefGet ? window.Android : null;
 export const store = {
-  get(k, d) { try { const v = localStorage.getItem(P + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
-  set(k, v) { try { localStorage.setItem(P + k, JSON.stringify(v)); } catch { /* stockage plein */ } },
-  del(k) { try { localStorage.removeItem(P + k); } catch { /* rien */ } },
+  get(k, d) {
+    try {
+      const n = nat(k);
+      let v = n ? n.prefGet(P + k) : null;
+      if (v == null) { v = localStorage.getItem(P + k); if (n && v != null) n.prefSet(P + k, v); }   // reprise des anciennes données
+      return v == null ? d : JSON.parse(v);
+    } catch { return d; }
+  },
+  set(k, v) {
+    const s = JSON.stringify(v), n = nat(k);
+    try { if (n) n.prefSet(P + k, s); } catch { /* pont indisponible */ }
+    try { localStorage.setItem(P + k, s); } catch { /* stockage plein */ }
+  },
+  del(k) {
+    const n = nat(k);
+    try { if (n) n.prefSet(P + k, null); } catch { /* pont indisponible */ }
+    try { localStorage.removeItem(P + k); } catch { /* rien */ }
+  },
 };
 
 export const DEFAULTS = { adblock: 0, quality: 0, lowLat: 1, chatPos: 0, chatStyle: 0, chatSize: 0, alerts: 0, resume: 0, sleep: 0, stats: 0, lang: 0 };
