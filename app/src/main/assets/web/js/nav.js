@@ -1,5 +1,5 @@
 // Navigation à la télécommande : déplace le « focus » vers l’élément le plus proche dans la direction choisie.
-export const N = { focused: null, scale: 1, cands: () => [] };
+export const N = { focused: null, scale: 1, fast: false, cands: () => [] };
 const side = () => document.getElementById("side");
 
 export function setFocus(el, { scroll = true, smooth = true } = {}) {
@@ -8,7 +8,7 @@ export function setFocus(el, { scroll = true, smooth = true } = {}) {
   N.focused = el;
   el.classList.add("focused");
   side().classList.toggle("open", side().contains(el));
-  if (scroll) ensureVisible(el, smooth);
+  if (scroll) ensureVisible(el, smooth && !N.fast);
   if (el._focus) el._focus();
 }
 
@@ -43,8 +43,10 @@ export function move(dir) {
   const cur = N.focused;
   let list = N.cands();
   if (!list.length) return;
-  if (!cur || !list.includes(cur)) { setFocus(list[0]); return; }
-  const sd = side(), inSide = sd.contains(cur), vertical = dir === "up" || dir === "down";
+  const sd = side();
+  // Focus perdu (écran redessiné, élément masqué) : on repart du contenu plutôt que du haut du menu.
+  if (!cur || !cur.isConnected || !list.includes(cur)) { setFocus(list.find(e => !sd.contains(e)) || list[0]); return; }
+  const inSide = sd.contains(cur), vertical = dir === "up" || dir === "down";
   if (inSide && vertical) list = list.filter(e => sd.contains(e));
   if (!inSide && vertical) list = list.filter(e => !sd.contains(e));
   // Clavier de recherche : haut/bas ne sortent jamais vers les résultats de droite.

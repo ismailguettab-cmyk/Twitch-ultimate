@@ -30,8 +30,30 @@ export function initPlayer() {
   video.addEventListener("canplay", () => { clearTimeout(P.waitT); if (el("pmsg").dataset.kind === "buffer") hideMsg(); });
   video.addEventListener("ended", () => { if (P.open && P.mode !== "live") showMsg("end"); });
   setInterval(updateStats, 1000);
+  setInterval(watchDrops, 1000);
   setInterval(() => { if (P.open && P.mode === "vod" && !DEMO) saveProgress(P.vod, video.currentTime); }, 15000);
-  requestAnimationFrame(loop);
+  // Le chat est ajouté par paquets, 4 fois par seconde : le faire à chaque image volait du temps à la vidéo.
+  setInterval(() => { if (P.open) flushChat(); }, 250);
+  if (DEMO) requestAnimationFrame(loop);   // l’animation image par image ne sert qu’au mode démo
+}
+
+/* ---------- qualité adaptée au Fire Stick ----------
+ * Si le décodeur perd beaucoup d’images (1080p60 trop lourd pour certains modèles), on descend d’un cran
+ * automatiquement, une seule fois par lecture, et on prévient. */
+const drops = { f: 0, d: 0, bad: 0 };
+function watchDrops() {
+  if (!P.open || P.demo || P.paused || !P.hls || !video.getVideoPlaybackQuality) return;
+  const q = video.getVideoPlaybackQuality(), df = q.totalVideoFrames - drops.f, dd = q.droppedVideoFrames - drops.d;
+  drops.f = q.totalVideoFrames; drops.d = q.droppedVideoFrames;
+  if (df < 10 || P.autoLowered) { drops.bad = 0; return; }
+  drops.bad = dd / df > 0.12 ? drops.bad + 1 : 0;
+  if (drops.bad < 5) return;
+  const auto = P.quals.length - 1;
+  if (P.qi >= auto - 1) return;          // déjà au plus bas, ou en Auto
+  P.autoLowered = true; drops.bad = 0;
+  P.qi++; applyQuality(); refreshBtns();
+  A.toast(`<div><b>Qualité réduite à ${esc(P.quals[P.qi].label)}</b><small>Votre appareil perdait des images. Vous pouvez la changer avec le bouton Qualité.</small></div>`, 4500);
+  log("INFO", "qualité réduite automatiquement", P.quals[P.qi].label);
 }
 
 /* ---------- ouverture / fermeture ---------- */
@@ -41,6 +63,7 @@ export async function openPlayer(o) {
   P.paused = false; P.t = 0; P.dur = 0; P.ads = 0; P.vt = 0; P.reposing = false; P.muted = null; P.volMain = 1; P.volPip = 0;
   if (o.chat) P.chat = true;
   player.classList.add("open");
+  el("stage").classList.add("p-open");   // l’interface derrière la vidéo n’est plus dessinée
   applyChat(); buildUI(); showZap(); showUI(false);
   startChat();
   if (P.mode === "live" && !P.ch.stream) { try { P.ch.stream = await A.P.getStream(P.ch); buildUI(); } catch (e) { log("WARN", e.message); } }
@@ -54,6 +77,7 @@ export function closePlayer() {
   el("adpill").classList.remove("show");
   el("qmenu").classList.add("gone");
   player.classList.remove("open", "ui");
+  el("stage").classList.remove("p-open");
   A.onPlayerClosed(P.ret, P.mode);
 }
 
@@ -67,6 +91,7 @@ function resumePos() {
 async function startMain() {
   stopMain();
   const my = ++P.seq;
+  P.autoLowered = false; drops.f = drops.d = drops.bad = 0;
   showMsg("loading");
   if (DEMO) {
     P.demo = true;
@@ -108,9 +133,13 @@ function stopMain() {
 }
 
 function attachHls(v, url, opt) {
+  // Tampons bornés : le Fire Stick a peu de mémoire. En live, 3 segments d’avance minimum :
+  // avec 2, la moindre lenteur réseau vide le tampon et l’image saccade.
   const cfg = {
-    enableWorker: true, lowLatencyMode: false, backBufferLength: 30, maxBufferLength: opt.pip ? 10 : 30, capLevelToPlayerSize: false,
-    liveSyncDurationCount: settings.lowLat ? 2 : 3, liveMaxLatencyDurationCount: settings.lowLat ? 6 : 10,
+    enableWorker: true, lowLatencyMode: false, capLevelToPlayerSize: false,
+    backBufferLength: opt.live ? 8 : 20, maxBufferLength: opt.pip ? 8 : 20, maxMaxBufferLength: opt.pip ? 12 : 30, maxBufferSize: (opt.pip ? 15 : 40) * 1e6,
+    liveSyncDurationCount: settings.lowLat ? 3 : 4, liveMaxLatencyDurationCount: settings.lowLat ? 10 : 14,
+    startFragPrefetch: true, nudgeMaxRetry: 6,
     manifestLoadingMaxRetry: 2, levelLoadingMaxRetry: 4, fragLoadingMaxRetry: 6,
   };
   if (opt.start > 0) cfg.startPosition = opt.start;
@@ -498,7 +527,6 @@ function loop(now) {
   const dt = Math.min(.1, (now - lastFrame) / 1000);
   lastFrame = now;
   if (P.open) {
-    flushChat();
     if (P.demo) {
       if (!P.paused) { P.vt += dt; if (P.mode !== "live") P.t = Math.min(P.dur, P.t + dt); }
       drawScene(pcv.getContext("2d"), pcv.width, pcv.height, P.vt, hueOf(P.ch.login), true);

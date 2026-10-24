@@ -42,7 +42,11 @@ bindPlayer(A);
 function fit() {
   const st = $("#stage"), w = innerWidth, hh = innerHeight;
   N.scale = Math.min(w / 1920, hh / 1080);
-  st.style.transform = `translate(${(w - 1920 * N.scale) / 2}px,${(hh - 1080 * N.scale) / 2}px) scale(${N.scale})`;
+  const x = (w - 1920 * N.scale) / 2, y = (hh - 1080 * N.scale) / 2;
+  // Sans transformation quand l’écran fait déjà 1920 × 1080 : une vidéo dans un bloc transformé
+  // perd l’affichage matériel du Fire Stick et saccade.
+  st.style.transform = Math.abs(N.scale - 1) < 0.01 && Math.abs(x) < 1 && Math.abs(y) < 1 ? "none" : `translate(${x}px,${y}px) scale(${N.scale})`;
+  if (st.style.transform === "none") N.scale = 1;
 }
 addEventListener("resize", fit); addEventListener("load", fit); setTimeout(fit, 500); setTimeout(fit, 2000);
 
@@ -98,7 +102,7 @@ function topbar() {
   const sc = $("#home-scroll");
   $(".topbar").classList.toggle("solid", S.view !== "home" || sc.scrollTop > 120);
 }
-setInterval(topbar, 150);
+$("#home-scroll").addEventListener("scroll", topbar, { passive: true });
 
 async function openChannel(c) {
   if (c.live) return A.openPlayer({ ch: c, mode: "live" });
@@ -280,10 +284,14 @@ function renderProfilePicker(profiles, done) {
     }
     connectSound();
     L.classList.add("launch");
-    setTimeout(() => { L.classList.add("gone"); L.className = "gone"; done(); }, 650);
+    // Rend la navigation à l’app : sinon les flèches visent encore les cartes de profil, devenues invisibles,
+    // et plus rien ne répond (menu bloqué dans tous les onglets).
+    N.cands = defaultCands;
+    setTimeout(() => { L.className = "gone"; L.innerHTML = ""; done(); }, 650);
   };
+  let picked = false;   // un seul choix : un 2e appui sur OK pendant l’animation ne relance rien
   L.querySelectorAll(".pf-card[data-id]").forEach(el => {
-    el._enter = () => { pick(el.dataset.id); };
+    el._enter = () => { if (picked) return; picked = true; pick(el.dataset.id); };
   });
   const add = L.querySelector(".pf-card.add");
   add._enter = async () => { N.cands = defaultCands; await startLogin(); done(); };
@@ -395,7 +403,7 @@ async function refreshLives() {
 }
 
 /* ---------- touches ---------- */
-let lastKey = Date.now();
+let lastKey = Date.now(), lastMove = 0;
 function onAction(a) {
   lastKey = Date.now();
   if (!$("#modal").classList.contains("gone")) {
@@ -443,6 +451,14 @@ addEventListener("keydown", e => {
   if (!a && e.keyCode === 23) a = "ok"; // bouton central de certaines télécommandes
   if (!a) return;
   e.preventDefault();
+  if (a === "up" || a === "down" || a === "left" || a === "right") {
+    // Flèche maintenue ou tapée en rafale : on limite la cadence pour que l’écran suive,
+    // et on défile sans animation (les animations empilées figeaient l’interface).
+    const now = performance.now();
+    if (now - lastMove < 75) return;
+    N.fast = now - lastMove < 280;
+    lastMove = now;
+  }
   if (a === "chat" || a === "stats") { if (isOpen()) playerKey(a); return; }
   onAction(a);
 });
@@ -483,5 +499,6 @@ async function boot() {
   setInterval(refreshLives, DEMO ? 20000 : 90000);
   setInterval(() => { if (!isOpen()) loadExtra(); }, 15 * 60000);
   setTimeout(() => checkUpdate(false), 5000);
+  if (P.keepProfilesAlive) { setTimeout(P.keepProfilesAlive, 20000); setInterval(P.keepProfilesAlive, 12 * 3600e3); }
 }
 boot();

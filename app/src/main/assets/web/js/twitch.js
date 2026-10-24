@@ -13,12 +13,14 @@ export function listProfiles() { return store.get("profiles", []); }
 export function activeProfileId() { return store.get("activeProfile", null); }
 export function setActiveProfile(id) {
   store.set("activeProfile", id);
-  auth = store.get("prof:" + id + ":auth", null);
+  auth = loadAuth(id);
   me = store.get("prof:" + id + ":me", null);
   cache.clear();
   return !!(auth && me);   // false si le profil est incomplet (session à refaire)
 }
 function K(name) { const id = store.get("activeProfile", "_"); return "prof:" + id + ":" + name; }
+// Chaque jeton porte l’id de son compte (pid) : il n’est jamais rangé sous un autre profil.
+function loadAuth(id) { const a = id ? store.get("prof:" + id + ":auth", null) : null; return a ? { ...a, pid: id } : null; }
 function upsertProfile(u) {
   const list = store.get("profiles", []);
   const p = { id: u.id, login: u.login, name: u.display_name || u.login, avatar: u.profile_image_url || "" };
@@ -32,7 +34,7 @@ export function removeProfile(id) {
   store.del("prof:" + id + ":auth"); store.del("prof:" + id + ":me"); store.del("prof:" + id + ":userToken");
   if (store.get("activeProfile", null) === id) store.del("activeProfile");
 }
-let auth = store.get(K("auth"), null);   // { access, refresh, exp } du profil actif
+let auth = loadAuth(store.get("activeProfile", null));   // { access, refresh, exp, pid } du profil actif
 let me = store.get(K("me"), null);
 
 const form = o => Object.entries(o).map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v)).join("&");
@@ -51,7 +53,7 @@ export async function pollDeviceAuth(dev, cancelled) {
     await sleep(dev.interval * 1000);
     if (cancelled()) return false;
     const r = await oauth({ scopes: SCOPES, device_code: dev.deviceCode, grant_type: "urn:ietf:params:oauth:grant-type:device_code" });
-    if (r.status === 200) { saveAuth(r.data); await loadMe(); return true; }
+    if (r.status === 200) { await adoptLogin(r.data); return true; }
     const m = String(r.data?.message || "");
     if (/slow_down/.test(m)) { dev.interval += 5; continue; }
     if (!/pending/.test(m)) throw new Error("Connexion refusée : " + (m || r.status));
@@ -59,7 +61,20 @@ export async function pollDeviceAuth(dev, cancelled) {
   throw new Error("Le code a expiré");
 }
 const oauth = params => json("POST", "https://id.twitch.tv/oauth2/token", { headers: FORM, body: form({ client_id: CONFIG.clientId, ...params }) });
-function saveAuth(d) { auth = { access: d.access_token, refresh: d.refresh_token, exp: Date.now() + (d.expires_in || 3600) * 1000 }; store.set(K("auth"), auth); }
+const authFrom = (d, pid) => ({ access: d.access_token, refresh: d.refresh_token, exp: Date.now() + (d.expires_in || 3600) * 1000, at: Date.now(), pid });
+function persistAuth(a) { if (a && a.pid) { const { pid, ...rest } = a; store.set("prof:" + pid + ":auth", rest); } }
+function saveAuth(d) { auth = authFrom(d, auth && auth.pid); persistAuth(auth); }
+/** Nouveau compte validé : on l’identifie d’abord, puis on range ses jetons sous SON id. Les autres profils ne sont pas touchés. */
+async function adoptLogin(d) {
+  auth = authFrom(d, null);
+  const u = await helix("/users");
+  me = u.data[0];
+  upsertProfile(me);
+  auth.pid = me.id;
+  persistAuth(auth);
+  store.set("prof:" + me.id + ":me", me);
+  cache.clear();
+}
 export function logout() { const id = store.get("activeProfile", null); if (id) removeProfile(id); auth = null; me = null; cache.clear(); }
 export const isLogged = () => !!(auth && me);
 export const getMe = () => me;
@@ -68,8 +83,27 @@ let refreshing = null;
 async function refresh() {
   if (!auth?.refresh) throw new Error("Session expirée");
   const r = await oauth({ grant_type: "refresh_token", refresh_token: auth.refresh });
-  if (r.status !== 200) { logout(); location.reload(); throw new Error("Session expirée, reconnectez-vous"); }
+  if (r.status === 400 || r.status === 401) {
+    // Jeton révoqué : on garde le profil dans « Qui regarde ? », seule sa session est à refaire.
+    if (auth.pid) store.del("prof:" + auth.pid + ":auth");
+    location.reload();
+    throw new Error("Session expirée, reconnectez-vous");
+  }
+  if (r.status !== 200) throw new Error("Twitch ne répond pas (" + r.status + ")");   // panne passagère : on ne déconnecte pas
   saveAuth(r.data);
+}
+/** Garde les AUTRES profils connectés : Twitch invalide un jeton de rafraîchissement inutilisé pendant 30 jours. */
+export async function keepProfilesAlive() {
+  for (const p of listProfiles()) {
+    if (auth && p.id === auth.pid) continue;
+    const a = loadAuth(p.id);
+    if (!a || !a.refresh || Date.now() - (a.at || 0) < 3 * 86400e3) continue;
+    try {
+      const r = await oauth({ grant_type: "refresh_token", refresh_token: a.refresh });
+      if (r.status === 200) persistAuth(authFrom(r.data, p.id));
+      else if (r.status === 400 || r.status === 401) { store.del("prof:" + p.id + ":auth"); log("WARN", "session expirée pour " + p.login); }
+    } catch (e) { log("WARN", "maintien de session", e.message); }
+  }
 }
 const ensureFresh = () => (refreshing = refreshing || refresh().finally(() => { refreshing = null; }));
 
@@ -90,18 +124,6 @@ export async function helix(path, params = {}, { soft404 = false } = {}) {
     return r.data;
   }
   throw new Error("Twitch ne répond pas sur " + path);
-}
-async function loadMe() {
-  const d = await helix("/users");
-  me = d.data[0];
-  const prev = store.get("activeProfile", null);
-  upsertProfile(me);                 // définit activeProfile sur le vrai id du compte
-  // Recopie les jetons sous la bonne clé si on venait d’un id temporaire ("_" ou autre).
-  if (prev !== me.id) {
-    store.set(K("auth"), auth);
-    if (prev) { store.del("prof:" + prev + ":auth"); store.del("prof:" + prev + ":me"); }
-  }
-  store.set(K("me"), me);
 }
 async function paged(path, params, max) {
   let out = [], cursor;

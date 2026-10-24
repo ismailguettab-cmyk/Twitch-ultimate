@@ -3,6 +3,22 @@
 Notez ici ce qui change à chaque release, puis copiez-le dans la description de la release GitHub :
 l’app affiche ce texte dans la fenêtre de mise à jour.
 
+## 1.5.1
+Comptes
+- Les comptes restent tous connectés : ajouter un compte ne déconnecte plus l’autre.
+- Les comptes non utilisés sont maintenus connectés en arrière-plan.
+- Une panne passagère de Twitch ne déconnecte plus. Si une session expire vraiment, le compte reste dans « Qui regarde ? » et il suffit de le revalider.
+
+Navigation
+- Correction du blocage de la télécommande après le choix du profil (menu qui ne s’ouvrait plus, plus rien de manipulable), sur tous les onglets.
+- Gauche / droite en rafale : l’écran suit sans se figer.
+
+Fluidité et mémoire
+- Lecture plus fluide : l’interface derrière la vidéo n’est plus dessinée pendant la lecture, et les effets de flou sur la vidéo ont été retirés.
+- Tampon vidéo mieux réglé : moins de saccades en live et moins de mémoire utilisée.
+- Si l’appareil perd des images, la qualité baisse automatiquement d’un cran (vous êtes prévenu).
+- L’aperçu dans les vignettes consomme beaucoup moins de mémoire et démarre un peu plus tard.
+
 ## 1.5.0
 Profils et lancement
 - Écran « Qui regarde ? » au lancement, type Netflix : choix du compte, bouton « Ajouter un compte », animation et petit son de connexion. Les jetons de chaque compte sont conservés séparément.
