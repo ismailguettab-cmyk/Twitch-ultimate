@@ -325,7 +325,7 @@ let Q = "", qTimer = null, qSeq = 0;
 export function renderSearch() {
   const pg = $("#search-page");
   pg.innerHTML = `<h1 class="page-h">Recherche</h1><p class="page-sub">Tapez le nom d’une chaîne. Les résultats s’affichent au fur et à mesure.</p>
-    <div class="srch"><div class="kb"><div class="sbox" id="sbox"></div><div class="kgrid" id="kgrid"></div></div><div class="sres" id="sres"></div></div>`;
+    <div class="srch"><div class="kb"><div class="sbox" id="sbox"></div><div class="kgrid" id="kgrid"></div></div><div class="sres" id="sres" data-scroll="y" data-mode="near"></div></div>`;
   const g = $("#kgrid");
   // Clavier en lignes régulières (7 colonnes). dataset.row borne la navigation verticale au clavier.
   [..."abcdefghijklmnopqrstuvwxyz0123456789"].forEach(ch => {
@@ -374,6 +374,7 @@ function showResults(chans) {
     const e = h("div", "ritem focusable" + (live ? " is-live" : ""), `${ava(c, 72)}
       <div class="rd-main"><div class="rd-name">${esc(c.name)}${live ? "<span class=\"rd-badge\">EN DIRECT</span>" : ""}</div><div class="rd-meta">${sub}</div></div>${vw}`);
     e.dataset.key = "r:" + c.login;
+    e.dataset.zone = "res";
     e.style.setProperty("--d", (i * 0.03) + "s"); // petite cascade d’apparition
     e._enter = () => A.openChannel(c);
     r.appendChild(e);

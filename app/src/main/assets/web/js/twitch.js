@@ -11,7 +11,13 @@ const SCOPES = "user:read:follows";
 // Multi-comptes : chaque profil a ses propres jetons, rangés sous "prof:<id>:*".
 export function listProfiles() { return store.get("profiles", []); }
 export function activeProfileId() { return store.get("activeProfile", null); }
-export function setActiveProfile(id) { store.set("activeProfile", id); auth = store.get(K("auth"), null); me = store.get(K("me"), null); cache.clear(); }
+export function setActiveProfile(id) {
+  store.set("activeProfile", id);
+  auth = store.get("prof:" + id + ":auth", null);
+  me = store.get("prof:" + id + ":me", null);
+  cache.clear();
+  return !!(auth && me);   // false si le profil est incomplet (session à refaire)
+}
 function K(name) { const id = store.get("activeProfile", "_"); return "prof:" + id + ":" + name; }
 function upsertProfile(u) {
   const list = store.get("profiles", []);
@@ -85,7 +91,18 @@ export async function helix(path, params = {}, { soft404 = false } = {}) {
   }
   throw new Error("Twitch ne répond pas sur " + path);
 }
-async function loadMe() { const d = await helix("/users"); me = d.data[0]; store.set(K("me"), me); upsertProfile(me); store.set(K("me"), me); }
+async function loadMe() {
+  const d = await helix("/users");
+  me = d.data[0];
+  const prev = store.get("activeProfile", null);
+  upsertProfile(me);                 // définit activeProfile sur le vrai id du compte
+  // Recopie les jetons sous la bonne clé si on venait d’un id temporaire ("_" ou autre).
+  if (prev !== me.id) {
+    store.set(K("auth"), auth);
+    if (prev) { store.del("prof:" + prev + ":auth"); store.del("prof:" + prev + ":me"); }
+  }
+  store.set(K("me"), me);
+}
 async function paged(path, params, max) {
   let out = [], cursor;
   do {

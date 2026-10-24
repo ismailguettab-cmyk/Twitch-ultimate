@@ -268,14 +268,22 @@ function renderProfilePicker(profiles, done) {
     <h1 class="pf-title">Qui regarde ?</h1>
     <div class="pf-grid">${cards}<div class="pf-card add focusable" data-key="pf:add"><div class="pf-plus">+</div><div class="pf-name">Ajouter un compte</div></div></div></div>`;
   N.cands = () => [...L.querySelectorAll(".focusable")];
-  const pick = (id) => {
+  const pick = async (id) => {
+    const okSession = P.setActiveProfile ? P.setActiveProfile(id) : true;
+    if (okSession === false) {
+      // Profil sans session valide : on relance la connexion pour ce compte.
+      N.cands = defaultCands;
+      L.className = "";
+      await startLogin();
+      done();
+      return;
+    }
     connectSound();
-    P.setActiveProfile(id);
     L.classList.add("launch");
     setTimeout(() => { L.classList.add("gone"); L.className = "gone"; done(); }, 650);
   };
   L.querySelectorAll(".pf-card[data-id]").forEach(el => {
-    el._enter = () => pick(el.dataset.id);
+    el._enter = () => { pick(el.dataset.id); };
   });
   const add = L.querySelector(".pf-card.add");
   add._enter = async () => { N.cands = defaultCands; await startLogin(); done(); };
@@ -329,10 +337,12 @@ async function loadAll() {
     D.followed = fol; D.cats = cats;
   } catch (e) {
     log("ERR", e);
-    boot.innerHTML = `<div class="boot-err"><b>Impossible de charger vos chaînes</b><small>${esc(e.message)}</small><div class="btn primary focusable" id="boot-retry">Réessayer</div></div>`;
+    boot.innerHTML = `<div class="boot-err"><b>Impossible de charger vos chaînes</b><small>${esc(e.message)}</small>
+      <div class="boot-btns"><div class="btn primary focusable" id="boot-retry">Réessayer</div><div class="btn focusable" id="boot-switch">Changer de compte</div></div></div>`;
     $("#boot-retry")._enter = () => location.reload();
+    $("#boot-switch")._enter = () => { if (P.logout) { try { P.logout(); } catch { /* */ } } location.reload(); };
+    N.cands = () => [...boot.querySelectorAll(".focusable")];
     setFocus($("#boot-retry"), { scroll: false });
-    N.cands = () => [$("#boot-retry")];
     return false;
   }
   boot.classList.add("gone");
@@ -395,7 +405,12 @@ function onAction(a) {
     return true;
   }
   if (!$("#login").classList.contains("gone")) {
-    if (a === "ok") { if (N.focused && $("#login").contains(N.focused)) activate(N.focused); else if (DEMO) P.validateDemoLogin && P.validateDemoLogin(); }
+    if (a === "ok") {
+      if (N.focused && $("#login").contains(N.focused)) activate(N.focused);
+      else if (DEMO) P.validateDemoLogin && P.validateDemoLogin();
+    } else if (["up", "down", "left", "right"].includes(a)) {
+      move(a);   // permet d’atteindre "Ajouter un compte" et les autres profils
+    }
     if (a === "back") return false;
     return true;
   }

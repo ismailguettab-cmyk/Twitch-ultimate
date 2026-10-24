@@ -49,6 +49,8 @@ export function move(dir) {
   if (!inSide && vertical) list = list.filter(e => !sd.contains(e));
   // Clavier de recherche : haut/bas ne sortent jamais vers les résultats de droite.
   if (cur.dataset && cur.dataset.kb && vertical) list = list.filter(e => e.dataset && e.dataset.kb);
+  // Zones (clavier / résultats de recherche) : haut/bas restent dans la même colonne.
+  if (cur.dataset && cur.dataset.zone && vertical) list = list.filter(e => e.dataset && e.dataset.zone === cur.dataset.zone);
   if (inSide && dir === "left") return;
   // Rangée horizontale (carrousel) : gauche/droite suit les voisins DOM, même hors écran.
   // Évite que "gauche" trop rapide ouvre le menu ou saute des lignes.
@@ -57,7 +59,7 @@ export function move(dir) {
     while (sib && !sib.classList.contains("focusable")) sib = dir === "left" ? sib.previousElementSibling : sib.nextElementSibling;
     if (sib) { setFocus(sib); return; }
     if (dir === "right") return;       // fin de rangée à droite : on ne bouge pas
-    // gauche en début de rangée : on laissera la géométrie choisir le menu ci-dessous
+    if (dir === "left") { const nav = sd.querySelector(".nav.active") || sd.querySelector(".nav"); if (nav) { setFocus(nav); return; } }
   }
   // Protection anti-saut : pour gauche/droite, ne jamais viser un élément qui n’est pas
   // à peu près sur la même ligne que l’élément courant (sinon on "saute" plusieurs lignes).
@@ -84,13 +86,9 @@ export function move(dir) {
     const pm = Math.min(...vc.map(v => v[1]));
     for (const [e, p, s] of vc) if (p <= pm + 40 * N.scale && s < bs) { bs = s; best = e; }
   }
-  if (best && !inSide && sd.contains(best)) {
-    // On n’ouvre le menu (bord gauche) que si rien d’autre n’est à gauche sur la même ligne.
-    const contentLeft = cur.closest(".view") ? cur.closest(".view").getBoundingClientRect().left : 0;
-    if (dir === "left" && r.left - contentLeft > r.width * 0.6) best = sd.querySelector(".nav.active") || best;
-    else if (dir === "left") best = null; // encore de la place à gauche : on ne saute pas au menu
-    else best = sd.querySelector(".nav.active") || best;
-  }
+  if (best && !inSide && sd.contains(best)) best = sd.querySelector(".nav.active") || best;
+  // Si rien trouvé en allant à gauche depuis la zone de contenu, ouvrir le menu.
+  if (!best && dir === "left" && !inSide) best = sd.querySelector(".nav.active") || sd.querySelector(".nav");
   if (best) setFocus(best);
 }
 

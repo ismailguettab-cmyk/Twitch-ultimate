@@ -115,7 +115,7 @@ Toute la logique est en JavaScript dans `app/src/main/assets/web/`. La partie An
 
 ## Limites connues
 
-- Les rediffusions réservées aux abonnés ne sont pas lisibles : Twitch ne délivre pas ces flux aux applications tierces.
+- Les rediffusions réservées aux abonnés sont lisibles uniquement pour les chaînes auxquelles vous êtes abonné, après avoir connecté votre session dans Réglages > Rediffusions des abonnés.
 - Le chat des rediffusions et des clips n’est pas encore disponible ; le chat des lives l’est.
 - Le chat est en lecture seule.
 - Le blocage des pubs est contraire aux conditions d’utilisation de Twitch. Le risque est faible pour un usage personnel, mais il existe.

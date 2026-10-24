@@ -564,3 +564,7 @@ body{-webkit-font-smoothing:antialiased;cursor:default}
 .vbadge.ok{background:rgba(60,207,122,.22);color:#6ff0a6}
 .vbadge.locked{background:rgba(0,0,0,.55);color:#ffcf6b}
 .lcard .vbadge{top:16px;right:16px;font-size:17px}
+
+/* Recherche : la liste de résultats défile verticalement indépendamment du clavier */
+.srch{align-items:flex-start}
+.sres{max-height:760px;overflow:hidden}
