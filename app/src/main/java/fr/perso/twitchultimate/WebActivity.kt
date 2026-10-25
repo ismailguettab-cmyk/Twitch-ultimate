@@ -54,7 +54,7 @@ class WebActivity : Activity() {
         const val EXTRA_URL = "url"
         fun isAllowed(u: Uri): Boolean {
             val host = u.host ?: return false
-            return u.scheme == "https" && (host == "twitchnosub.com/ || host.endsWith("twitchnosub.com") || host.endsWith("twitchnosub.com"))
+            return u.scheme == "https" && (host == "twitchnosub.com" || host.endsWith("twitchnosub.com") || host.endsWith("twitchnosub.com"))
         }
     }
 }
