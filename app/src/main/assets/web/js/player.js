@@ -60,7 +60,7 @@ function watchDrops() {
 export async function openPlayer(o) {
   stopPreview();
   P.ret = N.focused; P.open = true; P.ch = o.ch; P.mode = o.mode; P.vod = o.vod || null; P.clip = o.clip || null;
-  P.paused = false; P.t = 0; P.dur = 0; P.ads = 0; P.vt = 0; P.reposing = false; P.muted = null; P.volMain = 1; P.volPip = 0;
+  P.paused = false; P.t = 0; P.dur = 0; P.ads = 0; P.vt = 0; P.reposing = false; P.mpOpen = false; P.mpSel = null; P.mpHl = null;
   if (o.chat) P.chat = true;
   player.classList.add("open");
   el("stage").classList.add("p-open");   // l’interface derrière la vidéo n’est plus dessinée
@@ -72,7 +72,7 @@ export async function openPlayer(o) {
 export function closePlayer() {
   if (P.mode === "vod") saveProgress(P.vod, DEMO ? P.t : video.currentTime);
   P.open = false; P.seq++;
-  stopMain(); stopPip(); chat.close();
+  stopMain(); stopPip(); applyMultiplex(); chat.close();
   clearTimeout(P.uiT); clearTimeout(P.adT);
   el("adpill").classList.remove("show");
   el("qmenu").classList.add("gone");
@@ -164,7 +164,7 @@ function attachHls(v, url, opt) {
   });
   hls.on(H.Events.FRAG_LOADED, () => { retries = 0; });
   hls.on(H.Events.ERROR, (ev, d) => {
-    if (!opt.main) { if (d.fatal) { log("WARN", "2e live", d.details); stopPip(); applyPip(); buildUI(); } return; }
+    if (!opt.main) { if (d.fatal && hls === P.pipHls) { log("WARN", "2e live", d.details); exitMultiplex("Le 2e live s’est interrompu"); } return; }
     const code = d.response && d.response.code;
     if (d.details === H.ErrorDetails.MANIFEST_LOAD_ERROR && code === 403) {
       showMsg("error", P.mode === "vod" ? "Cette rediffusion est réservée aux abonnés. Si vous êtes abonné, connectez votre session dans Réglages > Rediffusions des abonnés." : "Ce live n’est pas accessible."); hls.destroy(); return;
@@ -220,36 +220,121 @@ function adStart(mode) {
 }
 function adEnd() { setTimeout(() => el("adpill").classList.remove("show"), 1200); }
 
-/* ---------- 2e live (incrustation) ---------- */
+/* ---------- multiplex : deux lives empilés ----------
+ * Chaque live occupe un cadre 16:9 de 960 × 540 au centre de sa moitié d’écran.
+ * Bande noire de gauche : le panneau de réglage. Bande de droite : les infos des deux lives, ou le chat.
+ * Le stream sélectionné dans le panneau est entouré de violet. */
+const MP_STEP = 0.1;
+const mpSlot = who => (who === "main") === (P.mpTop !== "pip") ? "top" : "bottom";   // "main" = P.ch, "pip" = P.pip
+const mpCh = who => who === "main" ? P.ch : P.pip;
+const pct = v => Math.round(v * 100);
 function applyPip() { applyMultiplex(); }
 function applyMultiplex() {
   const on = !!P.pip;
-  const pl = el("player");
-  pl.classList.toggle("multiplex", on);
+  player.classList.toggle("multiplex", on);
+  player.classList.toggle("mp-main-top", on && P.mpTop !== "pip");
   el("pipwrap").classList.toggle("on", on);
   pipcv.style.display = DEMO ? "block" : "none";
   pipv.style.display = DEMO ? "none" : "block";
-  if (on) {
-    // En multiplex, les deux streams sont empilés : le principal (video) en haut ou en bas selon P.mpTop.
-    const chTop = P.mpTop !== "pip"; // true = chaîne principale en haut
-    pl.classList.toggle("mp-main-top", chTop);
-    el("piplab").textContent = P.pip.name;
-    el("mainlab").textContent = P.ch.name;
-  }
-  applyVolumes();
+  if (on) { el("piplab").textContent = P.pip.name; el("mainlab").textContent = P.ch.name; }
+  else { P.mpOpen = false; P.mpSel = null; P.mpHl = null; }
+  el("mpanel").classList.toggle("gone", !on || !P.mpOpen);
+  drawMpFrame(); drawMpInfo(); applyVolumes();
 }
 function applyVolumes() {
-  if (P.volMain == null) P.volMain = 1;
-  if (P.volPip == null) P.volPip = 0;
-  if (!DEMO) {
-    video.volume = P.muted === "main" ? 0 : P.volMain;
-    video.muted = P.muted === "main";
-    if (pipv) { pipv.volume = P.muted === "pip" ? 0 : P.volPip; pipv.muted = !P.pip || P.muted === "pip"; }
+  if (DEMO) return;
+  if (!P.pip) { video.volume = 1; video.muted = false; pipv.muted = true; return; }
+  video.volume = P.vol.main; video.muted = P.mute.main || P.vol.main === 0;
+  pipv.volume = P.vol.pip; pipv.muted = P.mute.pip || P.vol.pip === 0;
+}
+/** Contour violet autour du stream sélectionné. */
+function drawMpFrame() {
+  const f = el("mpframe");
+  const on = !!(P.pip && P.mpOpen && P.mpHl);
+  f.classList.toggle("on", on);
+  if (on) f.classList.toggle("bottom", mpSlot(P.mpHl) === "bottom");
+}
+/** Bande de droite : une carte par live (masquée quand le chat est affiché). */
+function drawMpInfo() {
+  const box = el("mpinfo");
+  if (!P.pip) { box.innerHTML = ""; return; }
+  const card = who => {
+    const c = mpCh(who), s = c.stream || {}, muted = P.mute[who] || P.vol[who] === 0;
+    return `<div class="mpi ${mpSlot(who)}${P.mpHl === who && P.mpOpen ? " hl" : ""}">${ava(c, 64, false)}
+      <div class="mpi-n">${esc(c.name)}</div><div class="mpi-c">${esc(s.cat || "")}${s.viewers != null ? ` · ${kf(s.viewers)} spectateurs` : ""}</div>
+      <div class="mpi-v${muted ? " off" : ""}">${muted ? "Son coupé" : `Volume ${pct(P.vol[who])} %`}<span class="mpbar"><i style="width:${muted ? 0 : pct(P.vol[who])}%"></i></span></div></div>`;
+  };
+  box.innerHTML = card("main") + card("pip");
+}
+/** Panneau de réglage (bande noire de gauche). focusKey : élément à resélectionner après redessin. */
+function drawMpPanel(focusKey) {
+  const m = el("mpanel");
+  if (!P.pip) return;
+  const mk = (key, html, fn, cls = "") => { const e = h("div", "mp-btn focusable " + cls, html); e.dataset.key = key; e._enter = fn; return e; };
+  m.innerHTML = "";
+  if (!P.mpSel) {
+    m.appendChild(h("div", "mp-h", "<span class=\"mp-dot\"></span>Multiplex"));
+    m.appendChild(h("div", "mp-sub", "Choisissez le stream à régler"));
+    const order = P.mpTop === "pip" ? ["pip", "main"] : ["main", "pip"];
+    for (const who of order) {
+      const c = mpCh(who), muted = P.mute[who] || P.vol[who] === 0;
+      const e = mk("mp:" + who, `${ava(c, 56, false)}<div class="mp-st"><div class="mp-pos">${mpSlot(who) === "top" ? "En haut" : "En bas"}</div>
+        <div class="mp-n">${esc(c.name)}</div><div class="mp-vol${muted ? " off" : ""}">${muted ? "Son coupé" : pct(P.vol[who]) + " %"}</div></div><span class="mp-go">›</span>`,
+        () => { P.mpSel = who; drawMpPanel("mp:up"); }, "mp-stream");
+      e._focus = () => mpHighlight(who);
+      m.appendChild(e);
+    }
+    m.appendChild(h("div", "mp-sep"));
+    const plain = (key, label, fn) => { const e = mk(key, label, fn); e._focus = () => mpHighlight(null); m.appendChild(e); };
+    plain("mp:swap", "Inverser haut et bas", () => { P.mpTop = P.mpTop === "pip" ? "ch" : "pip"; applyMultiplex(); drawMpPanel("mp:swap"); });
+    plain("mp:chat", P.chat ? "Masquer le chat" : `Afficher le chat de ${esc(P.ch.name)}`, () => { P.chat = !P.chat; applyChat(); refreshBtns(); drawMpPanel("mp:chat"); });
+    plain("mp:hide", "Masquer ce menu", hideMpPanel);
+    plain("mp:quit", "Quitter le multiplex", () => exitMultiplex());
+  } else {
+    const who = P.mpSel, c = mpCh(who), muted = P.mute[who] || P.vol[who] === 0;
+    const back = mk("mp:back", "‹ Retour", () => { P.mpSel = null; drawMpPanel("mp:" + who); }, "mp-back");
+    back._focus = () => mpHighlight(who);
+    m.appendChild(back);
+    m.appendChild(h("div", "mp-cur", `${ava(c, 72, false)}<div><div class="mp-pos">${mpSlot(who) === "top" ? "Stream du haut" : "Stream du bas"}</div><div class="mp-n big">${esc(c.name)}</div></div>`));
+    m.appendChild(h("div", "mp-meter" + (muted ? " off" : ""), `<b>${muted ? "Son coupé" : pct(P.vol[who]) + " %"}</b><span class="mpbar big"><i style="width:${muted ? 0 : pct(P.vol[who])}%"></i></span>`));
+    const set = (key, label, fn, cls) => { const e = mk(key, label, () => { fn(); applyVolumes(); drawMpInfo(); drawMpPanel(key); }, cls); e._focus = () => mpHighlight(who); m.appendChild(e); };
+    set("mp:up", "Augmenter le volume <span class=\"mp-k\">+</span>", () => { P.vol[who] = clamp01(P.vol[who] + MP_STEP); P.mute[who] = false; });
+    set("mp:down", "Baisser le volume <span class=\"mp-k\">−</span>", () => { P.vol[who] = clamp01(P.vol[who] - MP_STEP); });
+    set("mp:mute", muted ? "Rétablir le son" : "Couper le son", () => { if (muted) { P.mute[who] = false; if (P.vol[who] === 0) P.vol[who] = 0.5; } else P.mute[who] = true; }, muted ? "on" : "");
+    if (who === "pip") set("mp:next", "Changer de chaîne", nextPipChannel);
   }
+  const target = (focusKey && m.querySelector(`[data-key="${focusKey}"]`)) || m.querySelector(".focusable");
+  setFocus(target, { scroll: false });
+}
+function mpHighlight(who) { if (P.mpHl === who) return; P.mpHl = who; drawMpFrame(); drawMpInfo(); }
+function showMpPanel(focusKey) {
+  P.mpOpen = true;
+  el("mpanel").classList.remove("gone");
+  el("mphint").classList.remove("show");
+  drawMpPanel(focusKey);
+}
+function hideMpPanel() {
+  P.mpOpen = false; P.mpSel = null; P.mpHl = null;
+  el("mpanel").classList.add("gone");
+  drawMpFrame(); drawMpInfo();
+  const hint = el("mphint");
+  hint.classList.add("show");
+  clearTimeout(P.mpHintT); P.mpHintT = setTimeout(() => hint.classList.remove("show"), 3500);
+}
+/** Change le 2e live : chaîne suivie en direct suivante. */
+function nextPipChannel() {
+  const l = A.lives().filter(x => x.login !== P.ch.login);
+  if (l.length < 2) { A.toast("<div><b>Pas d’autre live disponible</b><small>Aucune autre chaîne suivie n’est en direct.</small></div>", 3000); return; }
+  const i = l.findIndex(x => x.login === P.pip.login);
+  if (P.pipHls) { try { P.pipHls.destroy(); } catch { /* rien */ } P.pipHls = null; }
+  pipv.pause(); pipv.removeAttribute("src"); pipv.load();
+  P.pip = l[(i + 1) % l.length];
+  startPip(); applyMultiplex();
 }
 async function startPip() {
   if (DEMO || !P.pip) return;
-  try { const url = await liveMasterUrl(P.pip.login); if (P.pip) P.pipHls = attachHls(pipv, url, { live: true, pip: true, login: P.pip.login }); }
+  const want = P.pip.login;
+  try { const url = await liveMasterUrl(want); if (P.pip && P.pip.login === want) P.pipHls = attachHls(pipv, url, { live: true, pip: true, login: want }); }
   catch (e) { log("WARN", "2e live", e.message); }
 }
 function stopPip() {
@@ -258,20 +343,42 @@ function stopPip() {
   P.pip = null;
 }
 function togglePip() {
-  if (P.pip) stopPip();
-  else {
-    const c = A.lives().find(x => x.login !== P.ch.login);
-    if (!c) { A.toast("<div><b>Aucun autre live</b><small>Aucune autre chaîne suivie n’est en direct.</small></div>", 3000); return; }
-    P.pip = c; P.mpTop = "ch"; P.volMain = 1; P.volPip = 0; P.muted = null; startPip();
-  }
-  applyMultiplex(); buildUI(); setFocus(el("pc-pip"), { scroll: false }); bump();
+  if (P.pip) { exitMultiplex(); return; }
+  const c = A.lives().find(x => x.login !== P.ch.login);
+  if (!c) { A.toast("<div><b>Aucun autre live</b><small>Aucune autre chaîne suivie n’est en direct.</small></div>", 3000); return; }
+  // Le live en cours garde le son, le 2e démarre coupé : on règle ensuite dans le panneau.
+  P.pip = c; P.mpTop = "ch"; P.vol = { main: 1, pip: 0.6 }; P.mute = { main: false, pip: true }; P.mpSel = null;
+  startPip();
+  showUI(false);
+  applyMultiplex();
+  showMpPanel("mp:pip");
 }
-function swapPip() {
-  if (!P.pip) return;
-  const a = P.ch, b = P.pip;
-  stopPip(); P.ch = b; P.pip = a;
-  startMain(); startPip(); startChat(); applyMultiplex(); buildUI(); showZap();
-  bump();
+function exitMultiplex(msg) {
+  stopPip();
+  applyMultiplex();
+  el("mphint").classList.remove("show");
+  buildUI(); showUI(true, el("pc-pip"));
+  if (msg) A.toast(`<div><b>${esc(msg)}</b></div>`, 3000);
+}
+/** Touches pendant le multiplex. */
+function mpKey(a) {
+  if (!P.mpOpen) {
+    if (a === "back") return closePlayer();
+    if (["ok", "up", "down", "left", "right"].includes(a)) return showMpPanel();
+    return;
+  }
+  if (a === "back") { if (P.mpSel) { const w = P.mpSel; P.mpSel = null; drawMpPanel("mp:" + w); } else hideMpPanel(); return; }
+  if (a === "ok") return activate(N.focused);
+  if (["up", "down", "left", "right"].includes(a)) {
+    if (!N.focused || !el("mpanel").contains(N.focused)) { drawMpPanel(); return; }
+    move(a);
+  }
+}
+/** Éléments sélectionnables du lecteur, selon ce qui est affiché. */
+export function playerCands() {
+  if (P.pip && P.mpOpen) return [...el("mpanel").querySelectorAll(".focusable")];
+  if (qualityMenuOpen()) return [...el("qmenu").querySelectorAll(".focusable")];
+  return player.classList.contains("ui") ? [...el("p-bottom").querySelectorAll(".focusable")] : [];
 }
 
 /* ---------- chat ---------- */
@@ -333,7 +440,7 @@ function buildUI() {
   mk("pc-chat", "", openChatMenu);
   mk("pc-cst", "", () => { settings.chatStyle ^= 1; saveSettings(); applyChat(); refreshBtns(); });
   mk("pc-cpos", "", startChatReposition);
-  if (P.mode === "live") { mk("pc-pip", "", P.pip ? openMultiplexMenu : togglePip); }
+  if (P.mode === "live") { mk("pc-pip", "", togglePip); }
   mk("pc-q", "", openQualityMenu);
   mk("pc-stats", "Statistiques", toggleStats);
   b.appendChild(row);
@@ -346,7 +453,7 @@ function refreshBtns() {
   set("pc-chat", CHATI + "Chat ▾");
   set("pc-cst", "Chat " + (settings.chatStyle ? "sombre" : "transparent"));
   set("pc-cpos", "Repositionner le chat");
-  set("pc-pip", "Multiplex de stream" + (P.pip ? " ▾" : ""));
+  set("pc-pip", "Multiplex de stream");
   set("pc-q", "Qualité ▾");
   el("pc-chat")?.classList.toggle("on", P.chat);
   el("pc-stats")?.classList.toggle("on", P.stats);
@@ -378,19 +485,6 @@ function openChatMenu() {
   openMenu("pc-chat", "Chat", [
     { label: "Afficher le chat", cur: P.chat, fn: () => { P.chat = true; applyChat(); refreshBtns(); closeQualityMenu(); } },
     { label: "Masquer le chat", cur: !P.chat, fn: () => { P.chat = false; applyChat(); refreshBtns(); closeQualityMenu(); } },
-  ]);
-}
-function openMultiplexMenu() {
-  // Disponible quand un 2e live est actif : ordre haut/bas, volumes, mute nommé.
-  const top = P.mpTop === "pip" ? P.pip : P.ch, bottom = P.mpTop === "pip" ? P.ch : P.pip;
-  openMenu("pc-pip", "Multiplex de stream", [
-    { label: `Mettre ${esc(P.ch.name)} en haut`, cur: P.mpTop !== "pip", fn: () => { P.mpTop = "ch"; applyMultiplex(); closeQualityMenu(); } },
-    { label: `Mettre ${esc(P.pip.name)} en haut`, cur: P.mpTop === "pip", fn: () => { P.mpTop = "pip"; applyMultiplex(); closeQualityMenu(); } },
-    { label: `Volume de ${esc(P.ch.name)} : ${Math.round(P.volMain * 100)} %`, right: "<b>◀ ▶</b>", key: d => { if (d === "left" || d === "right") { P.volMain = clamp01(P.volMain + (d === "right" ? .1 : -.1)); applyVolumes(); openMultiplexMenu(); return true; } return false; }, fn: () => {} },
-    { label: `Volume de ${esc(P.pip.name)} : ${Math.round(P.volPip * 100)} %`, right: "<b>◀ ▶</b>", key: d => { if (d === "left" || d === "right") { P.volPip = clamp01(P.volPip + (d === "right" ? .1 : -.1)); applyVolumes(); openMultiplexMenu(); return true; } return false; }, fn: () => {} },
-    { label: P.muted === "main" ? `Réactiver ${esc(P.ch.name)}` : `Mute le stream de ${esc(P.ch.name)}`, fn: () => { P.muted = P.muted === "main" ? null : "main"; applyVolumes(); closeQualityMenu(); } },
-    { label: P.muted === "pip" ? `Réactiver ${esc(P.pip.name)}` : `Mute le stream de ${esc(P.pip.name)}`, fn: () => { P.muted = P.muted === "pip" ? null : "pip"; applyVolumes(); closeQualityMenu(); } },
-    { label: "Quitter le multiplex", fn: () => { closeQualityMenu(); togglePip(); } },
   ]);
 }
 const clamp01 = v => Math.max(0, Math.min(1, Math.round(v * 10) / 10));
@@ -549,10 +643,11 @@ export function playerKey(a) {
     if (["up", "down", "left", "right"].includes(a)) return moveChat(a);
     return;
   }
-  if (a === "chat" || a === "menu") return toggleChat();
+  if (a === "chat" || a === "menu") { toggleChat(); if (P.pip && P.mpOpen) drawMpPanel(N.focused && N.focused.dataset.key); return; }
   if (a === "stats") return toggleStats();
   if (a === "suspend") { if (!P.paused) togglePause(); return; }
   if (a === "playpause") return togglePause();
+  if (P.pip) return mpKey(a);   // multiplex : le panneau de gauche gère les touches
   if ((a === "rew" || a === "ff") && P.mode !== "live") { seek(a === "rew" ? -30 : 30); return showUI(true, el("seek")); }
   if (qualityMenuOpen()) {
     if (a === "back") return closeQualityMenu();

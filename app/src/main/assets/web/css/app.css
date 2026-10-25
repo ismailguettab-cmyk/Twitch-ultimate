@@ -493,17 +493,6 @@ body{-webkit-font-smoothing:antialiased;cursor:default}
 .qitem b{font-weight:800}
 .qitem .right{color:var(--tv-muted)}
 
-/* ===== Multiplex vertical ===== */
-#player.multiplex #video,#player.multiplex #pcv{height:50%;top:auto;bottom:0;object-fit:contain;background:#000}
-#player.multiplex.mp-main-top #video,#player.multiplex.mp-main-top #pcv{top:0;bottom:auto}
-#player.multiplex #pipwrap{position:absolute;left:0;right:0;width:100%;height:50%;border-radius:0;box-shadow:0 0 0 2px rgba(0,0,0,.6);top:0;bottom:auto}
-#player.multiplex.mp-main-top #pipwrap{top:auto;bottom:0}
-#mainlab{position:absolute;z-index:13;display:none;padding:8px 16px;font:800 20px var(--body);background:rgba(0,0,0,.55);border-radius:0 0 10px 0}
-#player.multiplex #mainlab{display:block;left:0}
-#player.multiplex.mp-main-top #mainlab{top:0}
-#player.multiplex:not(.mp-main-top) #mainlab{top:50%}
-#player.multiplex #piplab{top:0}
-
 /* indice de repositionnement du chat */
 #repohint{position:absolute;left:0;right:0;top:40px;z-index:30;display:none;justify-content:center;pointer-events:none}
 #repohint.on{display:flex}
@@ -574,8 +563,83 @@ body{-webkit-font-smoothing:antialiased;cursor:default}
 #stage.p-open .main,#stage.p-open .side,#stage.p-open .pvlayer{visibility:hidden}
 #stage.p-open .main *,#stage.p-open .side *{animation-play-state:paused!important}
 
-/* ===== Onglet GitHub ===== */
-.gh{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;height:100%;padding-bottom:80px}
-.gh-ic{width:150px;height:150px;border-radius:40px;display:grid;place-items:center;background:var(--tv-surface);margin-bottom:34px}
-.gh-ic svg{width:84px;height:84px;fill:none;stroke:var(--tv-fg);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
-.gh .page-sub{margin-bottom:40px}
+/* ===== Multiplex : deux lives empilés, réglages dans les bandes noires =====
+   Écran 1920 × 1080 : chaque live = cadre 16:9 de 960 × 540 centré dans sa moitié.
+   Gauche (0–480) : panneau de réglage. Droite (1440–1920) : infos des lives ou chat. */
+#mainlab{display:none}
+#player.multiplex{background:#07040d}
+#player.multiplex #video,#player.multiplex #pcv{top:540px;left:480px;right:auto;bottom:auto;width:960px;height:540px;object-fit:contain}
+#player.multiplex.mp-main-top #video,#player.multiplex.mp-main-top #pcv{top:0}
+#player.multiplex #pipwrap{top:0;left:480px;right:auto;bottom:auto;width:960px;height:540px;border-radius:0;box-shadow:none;transition:none}
+#player.multiplex.mp-main-top #pipwrap{top:540px}
+#player.multiplex #pipv,#player.multiplex #pipcv{object-fit:contain}
+/* étiquettes du nom sur chaque live */
+#player.multiplex #mainlab,#player.multiplex #piplab{display:block;position:absolute;z-index:13;right:auto;padding:7px 14px;font:800 19px var(--body);background:rgba(7,4,13,.72);border-radius:0 0 10px 0}
+#player.multiplex #mainlab{left:480px;top:540px}
+#player.multiplex.mp-main-top #mainlab{top:0}
+#player.multiplex #piplab{left:0;top:0}
+/* le reste du lecteur s’écarte des bandes */
+#player.multiplex #zap,#player.multiplex .p-top,#player.multiplex .p-bottom{display:none}
+#player.multiplex #stats{left:auto;right:24px;top:24px;z-index:16}
+#player.multiplex #chat{left:auto!important;right:0!important;top:0!important;bottom:0!important;width:480px;padding:28px 26px;background:#0b0714}
+#player.multiplex #chat.reposing{box-shadow:none}
+
+/* contour violet du live sélectionné */
+#mpframe{position:absolute;z-index:14;left:480px;top:0;width:960px;height:540px;pointer-events:none;opacity:0;border:4px solid #9146ff;border-radius:6px;
+  box-shadow:0 0 0 1px rgba(255,255,255,.18),0 0 36px 4px rgba(145,70,255,.55),inset 0 0 28px rgba(145,70,255,.35);transition:opacity .18s,top .22s ease}
+#mpframe.on{opacity:1}
+#mpframe.bottom{top:540px}
+#player:not(.multiplex) #mpframe,#player:not(.multiplex) #mpinfo{display:none}
+
+/* bande de droite : une carte par live */
+#mpinfo{position:absolute;z-index:11;right:0;top:0;width:480px;height:1080px;pointer-events:none}
+#chat.on ~ #mpinfo{display:none}
+.mpi{position:absolute;left:44px;right:44px;height:540px;display:flex;flex-direction:column;justify-content:center;gap:10px;opacity:.72;transition:opacity .2s}
+.mpi.top{top:0}.mpi.bottom{top:540px}
+.mpi.hl{opacity:1}
+.mpi .ava{margin-bottom:6px}
+.mpi.hl .ava{box-shadow:0 0 0 3px #07040d,0 0 0 6px #9146ff}
+.mpi-n{font:800 30px var(--body)}
+.mpi-c{font:600 19px var(--body);color:var(--tv-muted)}
+.mpi-v{display:flex;align-items:center;gap:14px;margin-top:8px;font:700 19px var(--body);color:var(--tv-lilac)}
+.mpi-v.off{color:#ff6b84}
+.mpbar{flex:1;max-width:180px;height:6px;border-radius:9px;background:rgba(255,255,255,.14);overflow:hidden}
+.mpbar i{display:block;height:100%;border-radius:9px;background:linear-gradient(90deg,#b98cff,#9146ff);transition:width .15s}
+.mpbar.big{flex:none;width:100%;max-width:none;height:10px}
+
+/* bande de gauche : le panneau de réglage */
+#mpanel{position:absolute;z-index:30;left:0;top:0;bottom:0;width:480px;padding:56px 36px;display:flex;flex-direction:column;justify-content:center;gap:12px;
+  background:linear-gradient(180deg,#120a20,#0b0714);box-shadow:inset -1px 0 0 rgba(145,70,255,.25)}
+.mp-h{display:flex;align-items:center;gap:12px;font:800 32px var(--disp);letter-spacing:-.01em}
+.mp-dot{width:12px;height:12px;border-radius:50%;background:#9146ff;box-shadow:0 0 12px #9146ff}
+.mp-sub{font:600 19px var(--body);color:var(--tv-muted);margin:-4px 0 14px}
+.mp-btn{display:flex;align-items:center;gap:14px;min-height:62px;padding:12px 20px;border-radius:14px;background:rgba(255,255,255,.06);font:700 22px var(--body);color:var(--tv-fg);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.06);transition:background .12s,box-shadow .12s,transform .12s}
+.mp-btn.focused{background:#9146ff;color:#fff;box-shadow:0 10px 30px -8px rgba(145,70,255,.8);transform:translateX(4px)}
+.mp-btn.on:not(.focused){box-shadow:inset 0 0 0 2px #ff6b84;color:#ff9db0}
+.mp-stream{padding:14px 18px;gap:16px}
+.mp-st{flex:1;min-width:0}
+.mp-pos{font:800 14px var(--body);letter-spacing:.08em;text-transform:uppercase;color:#bf94ff}
+.mp-btn.focused .mp-pos{color:#e9dcff}
+.mp-n{font:800 24px var(--body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mp-n.big{font-size:30px}
+.mp-vol{font:600 17px var(--body);color:var(--tv-muted)}
+.mp-btn.focused .mp-vol{color:#efe6ff}
+.mp-vol.off{color:#ff8098}
+.mp-go{font:400 40px/1 var(--body);opacity:.6}
+.mp-k{margin-left:auto;font:800 28px/1 var(--body);opacity:.85}
+.mp-sep{height:1px;background:rgba(255,255,255,.08);margin:10px 0}
+.mp-back{min-height:52px;font-size:20px;color:var(--tv-muted);align-self:flex-start;padding:10px 18px}
+.mp-cur{display:flex;align-items:center;gap:18px;margin:10px 0 4px}
+.mp-meter{display:flex;flex-direction:column;gap:12px;padding:18px 20px;border-radius:14px;background:rgba(145,70,255,.12);margin-bottom:10px}
+.mp-meter b{font:800 40px var(--disp)}
+.mp-meter.off b{color:#ff8098;font-size:30px}
+
+/* indice quand le panneau est masqué */
+#mphint{position:absolute;z-index:30;left:36px;bottom:36px;padding:14px 22px;border-radius:14px;background:rgba(18,10,32,.94);box-shadow:inset 0 0 0 2px rgba(145,70,255,.6);
+  font:700 20px var(--body);opacity:0;transform:translateY(10px);transition:opacity .25s,transform .25s;pointer-events:none}
+#mphint.show{opacity:1;transform:none}
+#mphint{max-width:408px}
+#mphint b{color:#bf94ff}
+/* bandeau « pub ignorée » : dans la bande de gauche, au-dessus du panneau, pour ne pas couvrir le chat */
+#player.multiplex #adpill{right:auto;left:24px;top:24px;max-width:432px;font-size:18px;padding:12px 18px}

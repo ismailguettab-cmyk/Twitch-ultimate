@@ -39,11 +39,5 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- Écran web pour ouvrir le GitHub du projet depuis l’onglet « GitHub » -->
-        <activity
-            android:name=".WebActivity"
-            android:exported="false"
-            android:screenOrientation="landscape"
-            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density" />
     </application>
 </manifest>

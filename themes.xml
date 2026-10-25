@@ -1,7 +1,0 @@
-<resources>
-    <color name="bg">#120A1F</color>
-    <style name="AppTheme" parent="android:Theme.Material.NoActionBar.Fullscreen">
-        <item name="android:windowBackground">@color/bg</item>
-        <item name="android:colorAccent">#9B5CFF</item>
-    </style>
-</resources>

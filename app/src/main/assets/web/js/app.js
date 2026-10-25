@@ -9,13 +9,13 @@ import { createMock, drawScene } from "./mock.js";
 import { N, setFocus, move, activate, restoreFocus, ensureVisible } from "./nav.js";
 import * as UI from "./ui.js";
 import { stopPreview } from "./preview.js";
-import { bindPlayer, initPlayer, openPlayer, isOpen, playerKey, playerClick, seekClick, onSettingChanged } from "./player.js";
+import { bindPlayer, initPlayer, openPlayer, isOpen, playerCands, playerKey, playerClick, seekClick, onSettingChanged } from "./player.js";
 
 const P = DEMO ? createMock() : twitch;
 const D = { followed: [], vods: [], clips: [], sched: [], cats: [], catRow: null, topFr: [], loadingExtra: true };
 const S = { view: "home", stack: [], mem: {}, cat: null, homeDirty: true };
-const VIEWS = { home: "#v-home", today: "#v-today", following: "#v-following", cats: "#v-cats", cat: "#v-cat", search: "#v-search", settings: "#v-settings", homecfg: "#v-homecfg", subs: "#v-subs", prof: "#v-prof", github: "#v-github" };
-const RENDER = { home: UI.renderHome, today: UI.renderToday, following: UI.renderFollowing, cats: UI.renderCats, cat: () => UI.renderCat(S.cat), search: UI.renderSearch, settings: UI.renderSettings, homecfg: UI.renderHomeCfg, subs: UI.renderSubs, prof: () => UI.renderProfile(S.prof), github: UI.renderGithub };
+const VIEWS = { home: "#v-home", today: "#v-today", following: "#v-following", cats: "#v-cats", cat: "#v-cat", search: "#v-search", settings: "#v-settings", homecfg: "#v-homecfg", subs: "#v-subs", prof: "#v-prof" };
+const RENDER = { home: UI.renderHome, today: UI.renderToday, following: UI.renderFollowing, cats: UI.renderCats, cat: () => UI.renderCat(S.cat), search: UI.renderSearch, settings: UI.renderSettings, homecfg: UI.renderHomeCfg, subs: UI.renderSubs, prof: () => UI.renderProfile(S.prof) };
 
 /* ---------- objet partagé avec ui.js et player.js ---------- */
 const A = {
@@ -54,8 +54,7 @@ addEventListener("resize", fit); addEventListener("load", fit); setTimeout(fit, 
 function cands() {
   if (!$("#modal").classList.contains("gone")) return $$("#modal .focusable");
   if (!$("#login").classList.contains("gone")) return $$("#login .focusable");
-  if (isOpen() && !$("#qmenu").classList.contains("gone")) return $$("#qmenu .focusable");
-  if (isOpen()) return $("#player").classList.contains("ui") ? $$("#p-bottom .focusable") : [];
+  if (isOpen()) return playerCands();
   return [...$$("#side .focusable"), ...$$(".view.active .focusable")].filter(e => e.offsetParent !== null);
 }
 const defaultCands = cands;

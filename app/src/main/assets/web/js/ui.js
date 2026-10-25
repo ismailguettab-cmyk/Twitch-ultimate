@@ -18,7 +18,6 @@ export const ICON = {
   heart: "<path d=\"M12 20s-7-4.4-9.2-8.6C1.2 8.2 3.2 4.5 6.8 4.5c2 0 3.4 1 5.2 3 1.8-2 3.2-3 5.2-3 3.6 0 5.6 3.7 4 6.9C19 15.6 12 20 12 20z\"/>",
   grid: "<rect x=\"3\" y=\"3\" width=\"7.5\" height=\"7.5\" rx=\"2\"/><rect x=\"13.5\" y=\"3\" width=\"7.5\" height=\"7.5\" rx=\"2\"/><rect x=\"3\" y=\"13.5\" width=\"7.5\" height=\"7.5\" rx=\"2\"/><rect x=\"13.5\" y=\"13.5\" width=\"7.5\" height=\"7.5\" rx=\"2\"/>",
   set: "<path d=\"M4 7h10M18 7h2M4 17h2M10 17h10\"/><circle cx=\"16\" cy=\"7\" r=\"2.5\"/><circle cx=\"8\" cy=\"17\" r=\"2.5\"/>",
-  github: "<path d=\"M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21\"/>",
 };
 export const PLAY = "<svg viewBox=\"0 0 24 24\"><path d=\"M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z\"/></svg>";
 export const PAUSE = "<svg viewBox=\"0 0 24 24\"><rect x=\"5\" y=\"4\" width=\"5\" height=\"16\" rx=\"1.5\"/><rect x=\"14\" y=\"4\" width=\"5\" height=\"16\" rx=\"1.5\"/></svg>";
@@ -34,7 +33,7 @@ function vodBadge(c) {
   return "";
 }
 function liveBadge() { return `<span class="ph-live"><span class="lp-eq"><i></i><i></i><i></i></span>En live</span>`; }
-const NAVS = [["search", "Recherche", "search"], ["home", "Lives suivis", "home"], ["today", "VOD", "vod"], ["following", "Suivis", "heart"], ["cats", "Catégories", "grid"], ["github", "GitHub", "github"], ["settings", "Réglages", "set"]];
+const NAVS = [["search", "Recherche", "search"], ["home", "Lives suivis", "home"], ["today", "VOD", "vod"], ["following", "Suivis", "heart"], ["cats", "Catégories", "grid"], ["settings", "Réglages", "set"]];
 export function renderSide(view) {
   const side = $("#side");
   if (!side.children.length) {
@@ -381,20 +380,6 @@ function showResults(chans) {
     e._enter = () => A.openChannel(c);
     r.appendChild(e);
   });
-}
-
-/* ---------- GitHub du projet ---------- */
-const GITHUB_URL = "https://nosubapp.com/?profile=twitch:fitzadri";
-export function renderGithub() {
-  const pg = $("#gh-page");
-  pg.innerHTML = `<div class="gh"><div class="gh-ic"><svg viewBox="0 0 24 24">${ICON.github}</svg></div>
-    <h1 class="page-h">VOD pour les SUB</h1>
-    <p class="page-sub">${esc(GITHUB_URL.replace("https://", ""))}</p><div class="btns" id="gh-btns"></div></div>`;
-  $("#gh-btns").appendChild(btn("Oui, Acceder aux VOD", "primary", openGithub, "gh:open"));
-}
-function openGithub() {
-  if (window.Android && window.Android.openUrl) { if (!window.Android.openUrl(GITHUB_URL)) A.toast("<div><b>Ouverture impossible</b></div>", 3000); }
-  else window.open(GITHUB_URL, "_blank");   // navigateur (mode démo)
 }
 
 /* ---------- réglages ---------- */

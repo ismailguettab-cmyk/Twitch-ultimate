@@ -1,8 +1,6 @@
 package fr.perso.twitchultimate
 
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
@@ -58,16 +56,6 @@ class NativeBridge(private val activity: MainActivity, private val web: WebView)
             onProgress = { pct -> post("window.__nb && __nb.updateProgress($pct)") },
             onError = { msg -> post("window.__nb && __nb.updateError(${JSONObject.quote(msg)})") }
         )
-    }
-
-    /** Ouvre une page GitHub dans l’écran web de l’app. Renvoie false si l’adresse n’est pas sur github.com. */
-    @JavascriptInterface
-    fun openUrl(url: String): Boolean {
-        if (!WebActivity.isAllowed(Uri.parse(url))) return false
-        activity.runOnUiThread {
-            activity.startActivity(Intent(activity, WebActivity::class.java).putExtra(WebActivity.EXTRA_URL, url))
-        }
-        return true
     }
 
     @JavascriptInterface

@@ -3,6 +3,16 @@
 Notez ici ce qui change à chaque release, puis copiez-le dans la description de la release GitHub :
 l’app affiche ce texte dans la fenêtre de mise à jour.
 
+## 1.1.9
+Multiplex de stream, refait
+- Les deux lives ont la même taille, au centre de leur moitié d’écran, avec des bandes noires de chaque côté.
+- Bande de gauche : le panneau de réglage. Choisissez le live à régler : il s’entoure de violet. Puis augmentez ou baissez son volume, ou coupez le son. Le 2e live peut aussi changer de chaîne.
+- Inverser haut et bas, afficher le chat, masquer le menu (OK pour le faire revenir) et quitter le multiplex.
+- Bande de droite : le nom, la catégorie et le volume de chaque live, ou le chat s’il est affiché.
+
+Divers
+- Onglet « GitHub » retiré.
+
 ## 1.1.8
 - Nouvel onglet « GitHub » : un bouton ouvre la page GitHub du projet dans l’app.
 - Sur cette page, les flèches de la télécommande déplacent un curseur comme une souris (il accélère si on maintient la touche et fait défiler la page au bord de l’écran). OK pour cliquer, Retour pour revenir.
