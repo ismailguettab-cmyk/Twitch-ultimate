@@ -14,8 +14,8 @@ import { bindPlayer, initPlayer, openPlayer, isOpen, playerKey, playerClick, see
 const P = DEMO ? createMock() : twitch;
 const D = { followed: [], vods: [], clips: [], sched: [], cats: [], catRow: null, topFr: [], loadingExtra: true };
 const S = { view: "home", stack: [], mem: {}, cat: null, homeDirty: true };
-const VIEWS = { home: "#v-home", today: "#v-today", following: "#v-following", cats: "#v-cats", cat: "#v-cat", search: "#v-search", settings: "#v-settings", homecfg: "#v-homecfg", subs: "#v-subs", prof: "#v-prof" };
-const RENDER = { home: UI.renderHome, today: UI.renderToday, following: UI.renderFollowing, cats: UI.renderCats, cat: () => UI.renderCat(S.cat), search: UI.renderSearch, settings: UI.renderSettings, homecfg: UI.renderHomeCfg, subs: UI.renderSubs, prof: () => UI.renderProfile(S.prof) };
+const VIEWS = { home: "#v-home", today: "#v-today", following: "#v-following", cats: "#v-cats", cat: "#v-cat", search: "#v-search", settings: "#v-settings", homecfg: "#v-homecfg", subs: "#v-subs", prof: "#v-prof", github: "#v-github" };
+const RENDER = { home: UI.renderHome, today: UI.renderToday, following: UI.renderFollowing, cats: UI.renderCats, cat: () => UI.renderCat(S.cat), search: UI.renderSearch, settings: UI.renderSettings, homecfg: UI.renderHomeCfg, subs: UI.renderSubs, prof: () => UI.renderProfile(S.prof), github: UI.renderGithub };
 
 /* ---------- objet partagé avec ui.js et player.js ---------- */
 const A = {
