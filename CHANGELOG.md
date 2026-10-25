@@ -3,6 +3,10 @@
 Notez ici ce qui change à chaque release, puis copiez-le dans la description de la release GitHub :
 l’app affiche ce texte dans la fenêtre de mise à jour.
 
+## 1.1.8
+- Nouvel onglet « GitHub » : un bouton ouvre la page GitHub du projet dans l’app.
+- Sur cette page, les flèches de la télécommande déplacent un curseur comme une souris (il accélère si on maintient la touche et fait défiler la page au bord de l’écran). OK pour cliquer, Retour pour revenir.
+
 ## 1.1.1
 Comptes
 - Les comptes restent tous connectés : ajouter un compte ne déconnecte plus l’autre.
