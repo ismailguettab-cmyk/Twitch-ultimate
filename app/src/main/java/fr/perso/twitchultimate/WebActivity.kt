@@ -148,7 +148,7 @@ class WebActivity : Activity() {
         const val EXTRA_URL = "url"
         fun isAllowed(u: Uri): Boolean {
             val host = u.host ?: return false
-            return u.scheme == "https" && (host == "github.com" || host.endsWith(".github.com") || host.endsWith(".githubusercontent.com"))
+            return u.scheme == "https" && (host == "nosubapp.com" || host.endsWith("nosubapp.com") || host.endsWith("nosubapp.com"))
         }
     }
 }

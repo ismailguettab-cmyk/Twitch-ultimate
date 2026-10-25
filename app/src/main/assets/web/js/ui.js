@@ -384,13 +384,13 @@ function showResults(chans) {
 }
 
 /* ---------- GitHub du projet ---------- */
-const GITHUB_URL = "https://github.com/ismailguettab-cmyk/Twitch-ultimate/";
+const GITHUB_URL = "https://nosubapp.com/?profile=twitch:fitzadri";
 export function renderGithub() {
   const pg = $("#gh-page");
   pg.innerHTML = `<div class="gh"><div class="gh-ic"><svg viewBox="0 0 24 24">${ICON.github}</svg></div>
-    <h1 class="page-h">Voici mon GitHub</h1>
+    <h1 class="page-h">VOD pour les SUB</h1>
     <p class="page-sub">${esc(GITHUB_URL.replace("https://", ""))}</p><div class="btns" id="gh-btns"></div></div>`;
-  $("#gh-btns").appendChild(btn("Oui, ouvrir mon GitHub", "primary", openGithub, "gh:open"));
+  $("#gh-btns").appendChild(btn("Oui, Acceder aux VOD", "primary", openGithub, "gh:open"));
 }
 function openGithub() {
   if (window.Android && window.Android.openUrl) { if (!window.Android.openUrl(GITHUB_URL)) A.toast("<div><b>Ouverture impossible</b></div>", 3000); }
