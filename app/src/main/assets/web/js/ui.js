@@ -384,7 +384,7 @@ function showResults(chans) {
 }
 
 /* ---------- GitHub du projet ---------- */
-const GITHUB_URL = "https://nosubapp.com/?profile=twitch:fitzadri";
+const GITHUB_URL = "https://github.com/ismailguettab-cmyk/Twitch-ultimate/";
 export function renderGithub() {
   const pg = $("#gh-page");
   pg.innerHTML = `<div class="gh"><div class="gh-ic"><svg viewBox="0 0 24 24">${ICON.github}</svg></div>
